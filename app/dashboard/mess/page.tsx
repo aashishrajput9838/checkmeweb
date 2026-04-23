@@ -25,14 +25,6 @@ const inventoryIcons: any = {
   bread: '🍞'
 };
 
-const foodAnalyticsData = [
-  { dish: 'Biryani', likes: 85, dislikes: 15 },
-  { dish: 'Fried Rice', likes: 65, dislikes: 35 },
-  { dish: 'Pasta', likes: 75, dislikes: 25 },
-  { dish: 'Grilled Chicken', likes: 90, dislikes: 10 },
-  { dish: 'Vegetable Curry', likes: 55, dislikes: 45 },
-];
-
 
 const daysOfWeek = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 
@@ -48,6 +40,7 @@ export default function MessDashboard() {
   const [isUpdating, setIsUpdating] = useState(false);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [inventoryList, setInventoryList] = useState<any[]>([]);
+  const [foodAnalyticsData, setFoodAnalyticsData] = useState<any[]>([]);
   const todayName = daysOfWeek[new Date().getDay()];
 
   useEffect(() => {
@@ -100,10 +93,20 @@ export default function MessDashboard() {
         setInventoryList(items);
     });
 
+    const unsubscribeAnalytics = onSnapshot(query(collection(db, 'food_analytics')), (snap) => {
+        const stats = snap.docs.map(doc => ({
+            dish: doc.data().dish,
+            likes: doc.data().likes || 0,
+            dislikes: doc.data().dislikes || 0
+        }));
+        setFoodAnalyticsData(stats);
+    });
+
     return () => {
         unsubscribeMenu();
         unsubscribePdf();
         unsubscribeInventory();
+        unsubscribeAnalytics();
     }
   }, [todayName]);
 

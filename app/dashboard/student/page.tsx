@@ -373,7 +373,11 @@ export default function StudentDashboard() {
                         <p className="text-muted-foreground text-yellow-700 animate-pulse">Loading menu...</p>
                     </Card>
                     ) : (
-                    <MenuCard menu={todaysMenu} timings={timings} />
+                    <MenuCard 
+                        menu={todaysMenu} 
+                        timings={timings} 
+                        userId={user?.email || undefined}
+                    />
                     )}
                 </TabsContent>
 
