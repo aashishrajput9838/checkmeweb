@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { setDoc } from 'firebase/firestore';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
@@ -11,7 +12,18 @@ import { Utensils, AlertTriangle, TrendingUp, FileText } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { AnalyticsChart } from '@/components/modules/AnalyticsChart';
 import { db } from '@/lib/firebase';
-import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
+import { doc, onSnapshot, updateDoc, collection, query } from 'firebase/firestore';
+import { InventoryCard } from '@/components/modules/InventoryCard';
+import { FoodPoll } from '@/components/modules/FoodPoll';
+import { Vote } from 'lucide-react';
+
+const inventoryIcons: any = {
+  rice: '🍚',
+  chicken: '🍗',
+  vegetables: '🥦',
+  milk: '🥛',
+  bread: '🍞'
+};
 
 const foodAnalyticsData = [
   { dish: 'Biryani', likes: 85, dislikes: 15 },
@@ -21,13 +33,6 @@ const foodAnalyticsData = [
   { dish: 'Vegetable Curry', likes: 55, dislikes: 45 },
 ];
 
-const inventoryItems = [
-  { name: 'Rice', quantity: 5 },
-  { name: 'Chicken', quantity: 12 },
-  { name: 'Vegetables', quantity: 8 },
-  { name: 'Milk', quantity: 3 },
-  { name: 'Bread', quantity: 2 },
-];
 
 const daysOfWeek = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 
@@ -42,10 +47,13 @@ export default function MessDashboard() {
   const [loading, setLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState(false);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [inventoryList, setInventoryList] = useState<any[]>([]);
   const todayName = daysOfWeek[new Date().getDay()];
 
   useEffect(() => {
-    const unsubscribeMenu = onSnapshot(doc(db, 'menus', 'weekly'), (docSnap) => {
+    const todayDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+
+    const unsubscribeMenu = onSnapshot(doc(db, 'mess_menu', 'weekly'), (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
         if (data && data[todayName]) {
@@ -58,44 +66,62 @@ export default function MessDashboard() {
           });
         }
       }
+      
+      // Override with today's specific emergency menu if it exists
+      onSnapshot(doc(db, 'daily_overrides', todayDate), (overrideSnap) => {
+        if (overrideSnap.exists()) {
+          const data = overrideSnap.data();
+          setFormMenu({
+            breakfast: data.breakfast || '',
+            lunch: data.lunch || '',
+            snacks: data.snacks || '',
+            dinner: data.dinner || '',
+          });
+        }
+      });
+
       setLoading(false);
     }, (error) => {
       console.error("Error fetching menu:", error);
       setLoading(false);
     });
 
-    const unsubscribePdf = onSnapshot(doc(db, 'menus', 'pdfContent'), (docSnap) => {
+    const unsubscribePdf = onSnapshot(doc(db, 'mess_menu', 'pdfContent'), (docSnap) => {
       if (docSnap.exists() && docSnap.data().url) {
         setPdfUrl(docSnap.data().url);
       }
     });
 
+    const unsubscribeInventory = onSnapshot(query(collection(db, 'inventory')), (snap) => {
+        const items = snap.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+        }));
+        setInventoryList(items);
+    });
+
     return () => {
         unsubscribeMenu();
         unsubscribePdf();
+        unsubscribeInventory();
     }
   }, [todayName]);
 
   const handleMenuUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsUpdating(true);
-    
     try {
-      // Convert comma-separated strings back to arrays, trimming whitespace
-      const updatedMenu = {
-        breakfast: formMenu.breakfast.split(',').map(i => i.trim()).filter(i => i),
-        lunch: formMenu.lunch.split(',').map(i => i.trim()).filter(i => i),
-        snacks: formMenu.snacks.split(',').map(i => i.trim()).filter(i => i),
-        dinner: formMenu.dinner.split(',').map(i => i.trim()).filter(i => i),
-      };
-
-      await updateDoc(doc(db, 'menus', 'weekly'), {
-        [todayName]: updatedMenu
+      const todayDate = new Date().toISOString().split('T')[0];
+      
+      await setDoc(doc(db, 'daily_overrides', todayDate), {
+        ...formMenu,
+        isEmergency: true,
+        updatedAt: new Date().toISOString()
       });
       
       toast({
-        title: 'Menu Updated!',
-        description: 'The live menu has been successfully updated.',
+        title: "Today's Menu Updated!",
+        description: `Emergency override active for ${todayDate}. This will only affect today.`,
       });
     } catch (error) {
       console.error("Error updating menu:", error);
@@ -113,7 +139,7 @@ export default function MessDashboard() {
     setFormMenu(prev => ({ ...prev, [field]: value }));
   };
 
-  const lowStockItems = inventoryItems.filter(item => item.quantity < 5);
+  const lowStockItems = inventoryList.filter(item => item.stock <= (item.threshold || 5));
 
   return (
     <div className="min-h-screen bg-background p-4 md:p-6">
@@ -163,9 +189,9 @@ export default function MessDashboard() {
               <CardHeader>
                 <div className="flex items-center gap-2">
                   <Utensils className="h-5 w-5" />
-                  <CardTitle>Update Menu</CardTitle>
+                  <CardTitle>Daily Menu Overwrite</CardTitle>
                 </div>
-                <p className="text-sm text-muted-foreground">Update {todayName.charAt(0).toUpperCase() + todayName.slice(1)}'s meal plan</p>
+                <p className="text-sm text-red-500 font-bold uppercase tracking-tight">⚠️ Affects today only: {new Date().toLocaleDateString()}</p>
               </CardHeader>
               <CardContent>
                 {loading ? (
@@ -248,31 +274,30 @@ export default function MessDashboard() {
         </div>
 
         {/* Inventory Section */}
-        <div className="mt-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Current Inventory</CardTitle>
-              <p className="text-sm text-muted-foreground">Items in stock</p>
+        <div className="mt-6 mb-20">
+          <Card className="bg-zinc-50 border-zinc-200">
+            <CardHeader className="pb-4">
+              <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="text-xl font-bold">Real-time Stock Management</CardTitle>
+                    <p className="text-sm text-muted-foreground italic">Manage inventory levels instantly (Cloud Synced)</p>
+                  </div>
+                  <div className="bg-zinc-900 text-white px-3 py-1 rounded text-[10px] font-bold uppercase tracking-widest">
+                      Live
+                  </div>
+              </div>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                {inventoryItems.map((item, index) => (
-                  <div 
-                    key={index} 
-                    className={`p-4 rounded-lg border ${
-                      item.quantity < 5 
-                        ? 'bg-red-50 border-red-200' 
-                        : 'bg-green-50 border-green-200'
-                    }`}
-                  >
-                    <div className="font-medium">{item.name}</div>
-                    <div className={`text-lg font-bold ${
-                      item.quantity < 5 ? 'text-red-600' : 'text-green-600'
-                    }`}>
-                      {item.quantity} units
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                {inventoryList.length > 0 ? (
+                    inventoryList.map((item) => (
+                        <InventoryCard key={item.id} item={{ ...item, icon: inventoryIcons[item.name.toLowerCase()] || '📦' }} />
+                    ))
+                ) : (
+                    <div className="col-span-full p-12 text-center text-zinc-400 border-2 border-dashed rounded-xl">
+                        Loading cloud inventory...
                     </div>
-                  </div>
-                ))}
+                )}
               </div>
             </CardContent>
           </Card>

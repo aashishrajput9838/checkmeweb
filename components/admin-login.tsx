@@ -9,7 +9,7 @@ import { auth } from '@/lib/firebase';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 
-export function AdminLogin() {
+export function AdminLogin({ isStaff = false }: { isStaff?: boolean }) {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -23,10 +23,10 @@ export function AdminLogin() {
         try {
             await signInWithEmailAndPassword(auth, email, password);
             toast({
-                title: 'Welcome Admin!',
-                description: 'Successfully signed in.',
+                title: 'Welcome Back!',
+                description: `Signed in as ${email === 'staff@checkme.com' ? 'Staff' : 'Admin'}.`,
             });
-            router.push('/dashboard/admin'); // Or wherever admin dashboard lives
+            router.push(email === 'staff@checkme.com' ? '/dashboard/mess' : '/dashboard/admin'); 
         } catch (error: any) {
             console.error('Login error:', error);
             let errorMessage = 'Failed to sign in. Please check your credentials.';
@@ -50,7 +50,7 @@ export function AdminLogin() {
             <div>
                 <Input
                     type="email"
-                    placeholder="Admin Email"
+                    placeholder="Email Address"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
@@ -70,9 +70,9 @@ export function AdminLogin() {
             <Button
                 type="submit"
                 disabled={isLoading}
-                className="w-full bg-yellow-500 hover:bg-yellow-600 text-black font-semibold"
+                className={`w-full font-semibold ${isStaff ? 'bg-yellow-500 hover:bg-yellow-600 text-black' : 'bg-red-500 hover:bg-red-600 text-white'}`}
             >
-                {isLoading ? 'Signing in...' : 'Sign in as Admin'}
+                {isLoading ? 'Signing in...' : `Sign in as ${isStaff ? 'Staff' : 'Admin'}`}
             </Button>
         </form>
     );

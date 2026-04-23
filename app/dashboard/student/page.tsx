@@ -99,8 +99,28 @@ export default function StudentDashboard() {
         }
       } else if (localMenu) {
          setWeeklyMenu(localMenu);
-         setTodaysMenu(localMenu[dayName] || { breakfast: [], lunch: [], snacks: [], dinner: [] });
+          setTodaysMenu(localMenu[dayName] || { breakfast: [], lunch: [], snacks: [], dinner: [] });
       }
+
+      // Check for TODAY'S EMERGENCY OVERRIDE
+      const todayDate = new Date().toISOString().split('T')[0];
+      onSnapshot(doc(db, 'daily_overrides', todayDate), (overrideSnap) => {
+        if (overrideSnap.exists()) {
+          const data = overrideSnap.data();
+          const overrideMenu = {
+              breakfast: data.breakfast ? data.breakfast.split(',').map((i:any)=>i.trim()) : [],
+              lunch: data.lunch ? data.lunch.split(',').map((i:any)=>i.trim()) : [],
+              snacks: data.snacks ? data.snacks.split(',').map((i:any)=>i.trim()) : [],
+              dinner: data.dinner ? data.dinner.split(',').map((i:any)=>i.trim()) : [],
+          };
+          setTodaysMenu(overrideMenu);
+          toast({
+            title: "Menu Alert",
+            description: "A special menu has been set for today by Mess Staff.",
+          });
+        }
+      });
+
       setLoadingMenu(false);
     }, (error) => {
       console.error("Error fetching menu:", error);
@@ -585,9 +605,13 @@ export default function StudentDashboard() {
           )}
 
           {/* Food Poll Column */}
-          {(currentTab === 'overview' || currentTab === 'poll') && (
+          {(currentTab === 'overview' || currentTab === 'polls') && (
             <div className={currentTab === 'overview' ? 'lg:col-span-1' : ''} id="food-polls">
-              <FoodPoll userId={user?.email || 'anonymous'} />
+              <div className="flex flex-col gap-6">
+                <FoodPoll userId={user?.email || 'anonymous'} pollId="sunday_brunch" readOnly={user?.email === 'staff@checkme.com'} />
+                <FoodPoll userId={user?.email || 'anonymous'} pollId="sunday_snacks" readOnly={user?.email === 'staff@checkme.com'} />
+                <FoodPoll userId={user?.email || 'anonymous'} pollId="sunday_dinner" readOnly={user?.email === 'staff@checkme.com'} />
+              </div>
             </div>
           )}
 

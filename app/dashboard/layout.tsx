@@ -28,9 +28,10 @@ function DashboardSidebar({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const isStudent = user?.email?.includes('@ug.sharda.ac.in');
   const isAdmin = user?.email === 'admin@checkme.com';
+  const isStaff = user?.email === 'staff@checkme.com';
 
   const navItems = [
-    ...(!isAdmin ? [
+    ...(isStudent ? [
       {
         title: 'Students Hub',
         href: '/dashboard/student',
@@ -52,7 +53,19 @@ function DashboardSidebar({ children }: { children: React.ReactNode }) {
         icon: <CalendarDays className="h-4 w-4" />,
       }
     ] : []),
-    ...(!isStudent && !isAdmin ? [
+    ...(isStaff ? [
+        {
+          title: 'Mess Dashboard',
+          href: '/dashboard/mess',
+          icon: <Utensils className="h-4 w-4" />,
+        },
+        {
+            title: 'Live Poll Results',
+            href: '/dashboard/student?tab=polls',
+            icon: <Vote className="h-4 w-4" />,
+        }
+      ] : []),
+    ...(!isStudent && !isAdmin && !isStaff ? [
       {
         title: 'Warden Dashboard',
         href: '/dashboard/warden',
@@ -68,6 +81,16 @@ function DashboardSidebar({ children }: { children: React.ReactNode }) {
       title: 'Admin Dashboard',
       href: '/dashboard/admin',
       icon: <ShieldAlert className="h-4 w-4" />,
+    },
+    {
+        title: 'Warden Center',
+        href: '/dashboard/warden',
+        icon: <UserCheck className="h-4 w-4" />,
+    },
+    {
+        title: 'System Polls',
+        href: '/dashboard/student?tab=polls',
+        icon: <Vote className="h-4 w-4" />,
     }] : [])
   ];
 

@@ -9,15 +9,16 @@ import { useRouter } from "next/navigation";
 export default function LoginPage() {
     const { user, loading } = useAuth();
     const router = useRouter();
-    const [isAdminMode, setIsAdminMode] = useState(false);
+    const [loginRole, setLoginRole] = useState<'student' | 'staff' | 'admin'>('student');
 
     useEffect(() => {
         if (!loading && user) {
-            // Basic role routing - if they are admin@checkme.com go to admin route
             if (user.email === 'admin@checkme.com') {
-                router.push('/dashboard/admin'); // Redirect admins to their specific dashboard
+                router.push('/dashboard/admin'); 
+            } else if (user.email === 'staff@checkme.com') {
+                router.push('/dashboard/mess');
             } else {
-                router.push("/");
+                router.push("/dashboard/student");
             }
         }
     }, [user, loading, router]);
@@ -30,26 +31,35 @@ export default function LoginPage() {
                 
                 <div className="flex bg-zinc-900 rounded-lg p-1 mb-8">
                     <button 
-                        className={`flex-1 py-2 rounded-md transition-colors ${!isAdminMode ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-400 hover:text-white'}`}
-                        onClick={() => setIsAdminMode(false)}
+                        className={`flex-1 py-2 text-xs rounded-md transition-colors ${loginRole === 'student' ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-400 hover:text-white'}`}
+                        onClick={() => setLoginRole('student')}
                     >
-                        Student / Staff
+                        Student
                     </button>
                     <button 
-                        className={`flex-1 py-2 rounded-md transition-colors ${isAdminMode ? 'bg-zinc-800 text-yellow-500 shadow-sm font-semibold' : 'text-zinc-400 hover:text-white'}`}
-                        onClick={() => setIsAdminMode(true)}
+                        className={`flex-1 py-2 text-xs rounded-md transition-colors ${loginRole === 'staff' ? 'bg-yellow-500 text-black shadow-sm font-semibold' : 'text-zinc-400 hover:text-white'}`}
+                        onClick={() => setLoginRole('staff')}
+                    >
+                        Staff
+                    </button>
+                    <button 
+                        className={`flex-1 py-2 text-xs rounded-md transition-colors ${loginRole === 'admin' ? 'bg-red-500 text-white shadow-sm font-semibold' : 'text-zinc-400 hover:text-white'}`}
+                        onClick={() => setLoginRole('admin')}
                     >
                         Admin
                     </button>
                 </div>
 
-                <div className="flex justify-center min-h-[140px] items-center">
-                    {isAdminMode ? (
-                        <div className="w-full">
-                            <AdminLogin />
+                <div className="flex justify-center min-h-[160px] items-center">
+                    {loginRole === 'student' ? (
+                        <div className="space-y-4 w-full">
+                            <GoogleSignIn />
+                            <p className="text-[10px] text-zinc-500 italic">Only @ug.sharda.ac.in emails allowed</p>
                         </div>
                     ) : (
-                        <GoogleSignIn />
+                        <div className="w-full">
+                            <AdminLogin isStaff={loginRole === 'staff'} />
+                        </div>
                     )}
                 </div>
             </div>
