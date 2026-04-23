@@ -18,8 +18,8 @@ export async function POST(request: Request) {
     let extractedText = '';
     const fileName = file.name.toLowerCase();
     
-    // DEBUG: Dump file to disk so we can inspect it!
-    require('fs').writeFileSync('debug_uploaded_file.pdf', buffer);
+    // DEBUG: Dump file to disk so we can inspect it! (Note: will fail in some public environments like Vercel if not carefully handled)
+    // require('fs').writeFileSync('debug_uploaded_file.pdf', buffer);
     console.log(`\n\n[DEBUG UPLOAD] Received file: ${fileName}, MIME: ${file.type}, Size: ${buffer.length} bytes\n\n`);
 
     const isImage = file.type.startsWith('image/') || fileName.endsWith('.jpg') || fileName.endsWith('.png') || fileName.endsWith('.jpeg');

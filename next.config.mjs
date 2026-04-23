@@ -6,7 +6,7 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
-  serverExternalPackages: ['tesseract.js'],
+  serverExternalPackages: ['tesseract.js', 'pdf-parse-new'],
 }
 
 export default nextConfig
