@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { GoogleSignIn } from "@/components/google-signin";
+import { IDSignIn, RoleBasedSignIn } from "@/components/id-signin";
 import { AdminLogin } from "@/components/admin-login";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
@@ -61,11 +62,32 @@ export default function LoginPage() {
                 <div className="flex justify-center min-h-[160px] items-center">
                     {loginRole === 'student' ? (
                         <div className="space-y-4 w-full">
-                            <GoogleSignIn />
-                            <p className="text-[10px] text-zinc-500 italic">Only @ug.sharda.ac.in emails allowed</p>
+                            <div className="flex flex-col space-y-4">
+                                <GoogleSignIn />
+                                <IDSignIn />
+                                <div className="relative">
+                                    <div className="absolute inset-0 flex items-center">
+                                        <span className="w-full border-t border-zinc-800"></span>
+                                    </div>
+                                    <div className="relative flex justify-center text-xs uppercase">
+                                        <span className="bg-black px-2 text-zinc-500 font-bold tracking-widest">or</span>
+                                    </div>
+                                </div>
+                                <AdminLogin role="student" />
+                            </div>
+                            <p className="text-[10px] text-zinc-500 italic mt-4">Only @ug.sharda.ac.in emails allowed for Google Sign-in</p>
                         </div>
                     ) : (
-                        <div className="w-full">
+                        <div className="w-full space-y-4">
+                            <RoleBasedSignIn role={loginRole} />
+                            <div className="relative">
+                                <div className="absolute inset-0 flex items-center">
+                                    <span className="w-full border-t border-zinc-800"></span>
+                                </div>
+                                <div className="relative flex justify-center text-xs uppercase">
+                                    <span className="bg-black px-2 text-zinc-500 font-bold tracking-widest">or</span>
+                                </div>
+                            </div>
                             <AdminLogin role={loginRole as 'staff' | 'warden' | 'admin'} />
                         </div>
                     )}

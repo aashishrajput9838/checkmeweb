@@ -65,6 +65,12 @@ export default function Page() {
           </div>
 
           <div className="flex items-center gap-4">
+            <Link 
+              href="/login" 
+              className="px-6 py-2 text-sm font-bold uppercase tracking-widest text-white border border-white/10 rounded-xl hover:bg-white hover:text-black transition-all"
+            >
+              Login
+            </Link>
             <GoogleSignIn />
           </div>
         </div>
@@ -94,6 +100,12 @@ export default function Page() {
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-6 animate-in fade-in slide-in-from-bottom-16 duration-1000">
+            <Link 
+              href="/login" 
+              className="px-8 h-14 bg-white text-black rounded-2xl flex items-center justify-center font-black hover:bg-yellow-500 transition-all shadow-xl"
+            >
+              Login with ID
+            </Link>
             <GoogleSignIn />
             <button className="flex items-center gap-2 text-zinc-400 hover:text-white font-bold transition-all group">
               Explore the Features <ArrowRight className="group-hover:translate-x-1 transition-transform" />
@@ -229,7 +241,13 @@ export default function Page() {
             <h2 className="text-4xl md:text-6xl font-black text-black mb-8 leading-tight">
               READY TO <br />UPGRADE YOUR LIFE?
             </h2>
-            <div className="flex justify-center">
+            <div className="flex flex-col sm:flex-row justify-center gap-6">
+              <Link 
+                href="/login" 
+                className="px-12 h-16 bg-black text-white rounded-2xl flex items-center justify-center font-black hover:bg-zinc-900 transition-all shadow-2xl"
+              >
+                Login with ID
+              </Link>
               <GoogleSignIn />
             </div>
             <p className="mt-8 text-black/60 font-bold uppercase tracking-widest text-xs">

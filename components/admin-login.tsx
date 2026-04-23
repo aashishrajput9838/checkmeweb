@@ -9,7 +9,7 @@ import { auth } from '@/lib/firebase';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 
-export function AdminLogin({ role = 'admin' }: { role?: 'staff' | 'warden' | 'admin' }) {
+export function AdminLogin({ role = 'admin' }: { role?: 'student' | 'staff' | 'warden' | 'admin' }) {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -28,7 +28,9 @@ export function AdminLogin({ role = 'admin' }: { role?: 'staff' | 'warden' | 'ad
                 description: `Signed in as ${displayRole}.`,
             });
             
-            if (email === 'staff@checkme.com' || role === 'staff') {
+            if (role === 'student') {
+                router.push('/dashboard/student');
+            } else if (email === 'staff@checkme.com' || role === 'staff') {
                 router.push('/dashboard/mess');
             } else if (email === 'warden@checkme.com' || role === 'warden') {
                 router.push('/dashboard/warden');
@@ -56,8 +58,9 @@ export function AdminLogin({ role = 'admin' }: { role?: 'staff' | 'warden' | 'ad
         <form onSubmit={handleLogin} className="space-y-4 px-4 py-2">
             <div>
                 <Input
+                    id="login-id-input"
                     type="email"
-                    placeholder="Email Address"
+                    placeholder={role === 'student' ? "System ID / Email" : "Email Address"}
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
@@ -78,6 +81,7 @@ export function AdminLogin({ role = 'admin' }: { role?: 'staff' | 'warden' | 'ad
                 type="submit"
                 disabled={isLoading}
                 className={`w-full font-semibold ${
+                    role === 'student' ? 'bg-yellow-400 hover:bg-yellow-500 text-black' :
                     role === 'staff' ? 'bg-zinc-100 hover:bg-zinc-200 text-black' : 
                     role === 'warden' ? 'bg-blue-500 hover:bg-blue-600 text-white' : 
                     'bg-red-500 hover:bg-red-600 text-white'
