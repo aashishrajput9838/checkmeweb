@@ -101,7 +101,6 @@ export default function AdminDashboard() {
   }
 
   return (
-  return (
     <ProtectedRoute allowedRoles={['admin']}>
       <div className="min-h-screen bg-background p-4 md:p-6 lg:ml-64">
         <div className="max-w-7xl mx-auto">

@@ -8,6 +8,7 @@ import { Megaphone } from 'lucide-react';
 
 // UI Components
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { ProtectedRoute } from '@/components/protected-route';
 import { UserAvatar } from '@/components/user-avatar';
 import { AttendanceTable } from '@/components/modules/AttendanceTable';
 import { FoodPoll } from '@/components/modules/FoodPoll';
