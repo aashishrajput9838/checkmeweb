@@ -8,6 +8,8 @@ import { UserAvatar } from '@/components/user-avatar'
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
+import { db } from '@/lib/firebase'
+import { doc, getDoc } from 'firebase/firestore'
 
 export default function Page() {
   const { user } = useAuth();
@@ -16,9 +18,26 @@ export default function Page() {
   const isStudent = user?.email?.includes('@ug.sharda.ac.in');
 
   useEffect(() => {
-    if (user?.email === 'admin@checkme.com') {
-      router.push('/dashboard/admin');
-    }
+    if (!user) return;
+
+    const checkRoleAndRedirect = async () => {
+      try {
+        const userDoc = await getDoc(doc(db, 'users', user.email!));
+        const role = userDoc.exists() ? userDoc.data()?.role : 'student';
+
+        if (role === 'admin') router.push('/dashboard/admin');
+        else if (role === 'warden') router.push('/dashboard/warden');
+        else if (role === 'staff') router.push('/dashboard/mess');
+        else if (role === 'representative' || role === 'student') {
+            // Only redirect if they are on the root path
+            if (window.location.pathname === '/') router.push('/dashboard/student');
+        }
+      } catch (error) {
+        console.error("Redirection error:", error);
+      }
+    };
+
+    checkRoleAndRedirect();
   }, [user, router]);
 
   if (user?.email === 'admin@checkme.com') return null;
