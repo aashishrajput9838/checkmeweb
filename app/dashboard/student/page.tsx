@@ -1,20 +1,22 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { UserAvatar } from '@/components/user-avatar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { CalendarDays, Utensils, Vote, Clock } from 'lucide-react';
+import { CalendarDays, Utensils, Vote, CheckCircle2, FileSpreadsheet, Download, Clock, Megaphone, LayoutDashboard } from 'lucide-react';
+import { utils, writeFile } from 'xlsx';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
 import { MenuCard } from '@/components/modules/MenuCard';
 import { AttendanceTable } from '@/components/modules/AttendanceTable';
 import { FoodPoll } from '@/components/modules/FoodPoll';
 import { db, storage } from '@/lib/firebase';
-import { doc, onSnapshot, getDoc, setDoc } from 'firebase/firestore';
+import { collection, query, orderBy, limit, onSnapshot, doc, getDoc, setDoc, where } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useAuth } from '@/contexts/AuthContext';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -25,23 +27,25 @@ const foodPollOptions = [
   { id: 'pasta', label: 'Pasta', votes: 35 }
 ];
 
-const attendanceData: { date: string; status: 'Present' | 'Absent' }[] = [
-  { date: '2024-02-10', status: 'Present' },
-  { date: '2024-02-11', status: 'Present' },
-  { date: '2024-02-12', status: 'Absent' },
-  { date: '2024-02-13', status: 'Present' },
-  { date: '2024-02-14', status: 'Present' },
-  { date: '2024-02-15', status: 'Present' },
-  { date: '2024-02-16', status: 'Present' }
-];
-
 const daysOfWeek = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 
 export default function StudentDashboard() {
   const { toast } = useToast();
   const { user } = useAuth();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const currentTab = searchParams.get('tab') || 'overview';
+  const [attendanceData, setAttendanceData] = useState<{ date: string; status: 'Present' | 'Absent' }[]>([]);
+  const [latestNotice, setLatestNotice] = useState<any>(null);
+
+  useEffect(() => {
+    const unsubNotice = onSnapshot(doc(db, 'notices', 'latest'), (snap) => {
+        if (snap.exists()) {
+            setLatestNotice(snap.data());
+        }
+    });
+    return () => unsubNotice();
+  }, []);
   const [todaysMenu, setTodaysMenu] = useState({
     breakfast: [],
     lunch: [],
@@ -60,6 +64,151 @@ export default function StudentDashboard() {
   const [isReviewing, setIsReviewing] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSavingParsed, setIsSavingParsed] = useState(false);
+
+  const [activeSurvey, setActiveSurvey] = useState<any>(null);
+  const [currentUserVote, setCurrentUserVote] = useState<any>(null);
+  const [surveySelections, setSurveySelections] = useState<any>({});
+  const [isSubmittingVote, setIsSubmittingVote] = useState(false);
+  const [menuHistory, setMenuHistory] = useState<any[]>([]);
+
+  const surveyDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+  const surveyMeals = ['breakfast', 'lunch', 'snacks', 'dinner'];
+
+  // Auto-Register Student on First Login
+  useEffect(() => {
+    const registerStudent = async () => {
+        if (user?.email?.endsWith('@ug.sharda.ac.in')) {
+            const userRef = doc(db, 'users', user.email);
+            const userSnap = await getDoc(userRef);
+
+            if (!userSnap.exists()) {
+                await setDoc(userRef, {
+                    name: user.displayName || user.email.split('@')[0],
+                    email: user.email,
+                    role: 'student',
+                    room: 'Not Assigned',
+                    enrolledAt: new Date().toISOString()
+                });
+                console.log("Auto-registered new student:", user.email);
+            }
+        }
+    };
+    registerStudent();
+  }, [user]);
+
+  useEffect(() => {
+    if (!user?.email) return;
+    
+    const q = query(
+        collection(db, 'users', user.email, 'attendance_history'),
+        orderBy('date', 'desc'),
+        limit(10)
+    );
+
+    const unsubscribe = onSnapshot(q, (snap) => {
+        const records = snap.docs.map(d => ({
+            date: d.data().date,
+            status: d.data().status
+        } as { date: string; status: 'Present' | 'Absent' }));
+        setAttendanceData(records);
+    });
+    return () => unsubscribe();
+  }, [user]);
+
+  // Fetch Active Survey & Current User Vote Status
+  useEffect(() => {
+    if (!user?.email) return;
+
+    const unsubSurvey = onSnapshot(query(collection(db, 'monthly_surveys'), where('status', '==', 'active')), (snap) => {
+        if (!snap.empty) {
+            const survey = { id: snap.docs[0].id, ...snap.docs[0].data() };
+            setActiveSurvey(survey);
+
+            // Listen for user's specific vote
+            const unsubVote = onSnapshot(doc(db, 'monthly_surveys', survey.id, 'votes', user.email), (vSnap) => {
+                if (vSnap.exists()) {
+                    setCurrentUserVote(vSnap.data());
+                } else {
+                    setCurrentUserVote(null);
+                }
+            });
+            return () => unsubVote();
+        } else {
+            setActiveSurvey(null);
+            setCurrentUserVote(null);
+        }
+    });
+
+    return () => unsubSurvey();
+  }, [user]);
+
+  // Fetch Menu History for Archive
+  useEffect(() => {
+    const unsubHistory = onSnapshot(query(collection(db, 'menu_history'), orderBy('generatedAt', 'desc'), limit(5)), (snap) => {
+        const items = snap.docs.map(d => ({
+            id: d.id,
+            ...d.data()
+        }));
+        setMenuHistory(items);
+    });
+    return () => unsubHistory();
+  }, []);
+
+  const handleDownloadBallotExcel = () => {
+    if (!currentUserVote) return;
+    
+    // Prepare data for Excel
+    const data = Object.entries(currentUserVote.selections).map(([slot, choice]) => {
+        const [day, meal] = slot.split('-');
+        return {
+            'Day': day.toUpperCase(),
+            'Meal': meal.toUpperCase(),
+            'My Selection': choice,
+            'Voted At': new Date(currentUserVote.timestamp?.toDate?.() || currentUserVote.timestamp).toLocaleString()
+        };
+    });
+
+    const worksheet = utils.json_to_sheet(data);
+    const workbook = utils.book_new();
+    utils.book_append_sheet(workbook, worksheet, "My Monthly Ballot");
+
+    // Fix column widths
+    worksheet['!cols'] = [{ wch: 15 }, { wch: 15 }, { wch: 30 }, { wch: 25 }];
+
+    writeFile(workbook, `Mess_Ballot_${user?.name?.replace(' ', '_') || 'Student'}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
+
+  const handleSurveySelect = (slotId: string, choice: string) => {
+    setSurveySelections(prev => ({ ...prev, [slotId]: choice }));
+  };
+
+  const handleSubmitMonthlyVote = async () => {
+    if (!activeSurvey || !user?.email) return;
+
+    // Validate all slots are filled (optional but professional)
+    const requiredTotal = 21; // 7 days * 3 meals (snacks omitted usually but prompt says all slots)
+    // Actually our slots are 4 per day (breakfast, lunch, snacks, dinner) -> 28
+    // The previous implementation used 4 meals. Let's stick to 4. 28 total.
+    
+    setIsSubmittingVote(true);
+    try {
+        const res = await fetch('/api/survey/vote', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                monthId: activeSurvey.id,
+                userId: user.email,
+                selections: surveySelections
+            })
+        });
+        if (!res.ok) throw new Error('Vote submission failed');
+        toast({ title: 'Vote Confirmed!', description: 'Your preferences for next month have been recorded.' });
+    } catch (error: any) {
+        toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    } finally {
+        setIsSubmittingVote(false);
+    }
+  };
 
   useEffect(() => {
     // 1. Fetch local fallback data (xlsx)
@@ -324,10 +473,104 @@ export default function StudentDashboard() {
           <p className="text-muted-foreground">Manage your hostel life efficiently</p>
         </div>
 
-        <div className={`grid gap-6 ${currentTab === 'overview' ? 'grid-cols-1 lg:grid-cols-3' : 'grid-cols-1 w-full max-w-4xl mx-auto'}`}>
+        {/* Integrated Notice Board - Only show on Overview/Hub */}
+        {latestNotice && (currentTab === 'overview' || currentTab === 'hub') && (
+            <div className="mb-8 animate-in slide-in-from-top-4 duration-500">
+                <Alert className="bg-zinc-900 border-zinc-800 text-white p-6 rounded-2xl shadow-xl border-l-4 border-l-blue-500 overflow-hidden relative">
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 rounded-full -translate-y-1/2 translate-x-1/2 blur-2xl"></div>
+                    <Megaphone className="h-5 w-5 text-blue-400" />
+                    <div className="ml-2">
+                        <AlertTitle className="text-blue-400 font-black uppercase tracking-widest text-xs mb-2 flex items-center gap-2">
+                            Official Warden Notice
+                            <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-ping"></span>
+                        </AlertTitle>
+                        <AlertDescription className="text-xl font-medium tracking-tight leading-relaxed">
+                            "{latestNotice.message}"
+                        </AlertDescription>
+                        <p className="mt-4 text-[10px] text-zinc-500 uppercase font-bold tracking-widest">
+                            Posted {new Date(latestNotice.timestamp).toLocaleString()}
+                        </p>
+                    </div>
+                </Alert>
+            </div>
+        )}
+
+        {/* Tab-based Routing */}
+        <div className="w-full">
+          {/* Overview / Student Hub */}
+          {currentTab === 'overview' && (
+              <div className="max-w-4xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <Card className="bg-zinc-900 text-white border-none p-8 rounded-3xl relative overflow-hidden">
+                          <div className="absolute top-0 right-0 w-64 h-64 bg-yellow-500/10 rounded-full -translate-y-1/2 translate-x-1/2 blur-3xl"></div>
+                          <div className="relative z-10">
+                              <h2 className="text-sm font-black uppercase tracking-[0.3em] text-yellow-500 mb-6">Student Profile</h2>
+                              <div className="flex items-center gap-6 mb-8">
+                                  {user?.photoURL ? (
+                                      <img 
+                                          src={user.photoURL} 
+                                          alt="Profile" 
+                                          className="h-20 w-20 rounded-2xl object-cover border-2 border-yellow-500/50 shadow-lg"
+                                          referrerPolicy="no-referrer"
+                                      />
+                                  ) : (
+                                      <div className="h-20 w-20 bg-yellow-500 rounded-2xl flex items-center justify-center text-black text-3xl font-black">
+                                          {user?.email?.charAt(0).toUpperCase()}
+                                      </div>
+                                  )}
+                                  <div>
+                                      <p className="text-3xl font-black tracking-tight">{user?.email?.split('@')[0]}</p>
+                                      <p className="text-zinc-400 text-sm">{user?.email}</p>
+                                  </div>
+                              </div>
+                              <div className="grid grid-cols-2 gap-4 pt-6 border-t border-white/10">
+                                  <div>
+                                      <p className="text-[10px] uppercase font-bold text-zinc-500">Hostel Role</p>
+                                      <p className="text-sm font-bold">Resident Student</p>
+                                  </div>
+                                  <div>
+                                      <p className="text-[10px] uppercase font-bold text-zinc-500">Room Info</p>
+                                      <p className="text-sm font-bold uppercase">Syncing with Warden Hub</p>
+                                  </div>
+                              </div>
+                          </div>
+                      </Card>
+
+                      <Card className="bg-blue-600 text-white border-none p-8 rounded-3xl flex flex-col justify-between">
+                          <div>
+                              <h2 className="text-sm font-black uppercase tracking-[0.3em] text-blue-200 mb-6">Quick Stats</h2>
+                              <div className="space-y-4">
+                                  <div className="flex justify-between items-center bg-white/10 p-3 rounded-xl border border-white/10">
+                                      <span className="text-xs">Meal Feedback Given</span>
+                                      <span className="font-bold">12 Total</span>
+                                  </div>
+                                  <div className="flex justify-between items-center bg-white/10 p-3 rounded-xl border border-white/10">
+                                      <span className="text-xs">Attendance Marked</span>
+                                      <span className="font-bold">{attendanceData.length} Days</span>
+                                  </div>
+                              </div>
+                          </div>
+                          <p className="text-[10px] uppercase font-bold text-blue-200 mt-8 tracking-widest">Verification Status: Verified</p>
+                      </Card>
+                  </div>
+
+                  <div className="mt-8 p-6 bg-zinc-50 rounded-2xl border border-zinc-200">
+                      <div className="flex items-center gap-3 mb-4">
+                          <div className="p-2 bg-zinc-900 rounded-lg text-white">
+                              <LayoutDashboard className="h-4 w-4" />
+                          </div>
+                          <h3 className="font-bold text-zinc-900 uppercase">Hub Explorer</h3>
+                      </div>
+                      <p className="text-sm text-zinc-500 leading-relaxed">
+                          Welcome to your central hub. Use the sidebar to check the live menu, cast your votes for Sunday specials, or verify your attendance history.
+                      </p>
+                  </div>
+              </div>
+          )}
+
           {/* Live Menu Board */}
-          {(currentTab === 'overview' || currentTab === 'menu') && (
-            <div className={`${currentTab === 'overview' ? 'lg:col-span-1' : ''} flex flex-col gap-6`} id="live-menu">
+          {currentTab === 'menu' && (
+            <div className="max-w-4xl mx-auto flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500" id="live-menu">
                 {/* Active/Upcoming Meal Highlight */}
                 {activeMealInfo && (currentTab === 'overview' || currentTab === 'menu') && (
                     <div className="bg-zinc-900 rounded-xl p-5 text-white shadow-xl border-t-4 border-yellow-500 overflow-hidden relative">
@@ -355,11 +598,13 @@ export default function StudentDashboard() {
                                     </div>
                                 ))
                              ) : (
-                                <p className="text-zinc-500 text-xs italic">No menu items found for this slot.</p>
+                                <p className="text-zinc-500 text-[10px] italic">No official PDF uploaded yet.</p>
                              )}
                         </div>
                     </div>
                 )}
+
+
 
             <Tabs defaultValue="today" className="w-full">
                 <TabsList className="w-full bg-yellow-100 border border-yellow-200">
@@ -483,6 +728,29 @@ export default function StudentDashboard() {
                             Download
                         </Button>
                     </div>
+
+                    {menuHistory.length > 0 && (
+                        <div className="mt-6 pt-6 border-t border-zinc-100">
+                            <h4 className="text-[10px] font-black uppercase text-zinc-400 tracking-widest mb-4">Historical Archives</h4>
+                            <div className="space-y-3">
+                                {menuHistory.map((h: any) => (
+                                    <div key={h.id} className="flex items-center justify-between p-3 bg-zinc-50 rounded-xl border border-zinc-100 hover:bg-white hover:border-yellow-200 transition-all cursor-pointer group">
+                                        <div className="flex items-center gap-3">
+                                            <div className="p-2 bg-zinc-200 text-zinc-600 rounded-lg group-hover:bg-yellow-100 group-hover:text-yellow-600 transition-colors">
+                                                <CalendarDays className="h-3 w-3" />
+                                            </div>
+                                            <div>
+                                                <p className="text-xs font-bold text-zinc-900 capitalize">{h.id.replace('-', ' ')} Archive</p>
+                                                <p className="text-[9px] text-zinc-500 font-medium">Generated on {new Date(h.generatedAt?.toDate?.() || h.generatedAt).toLocaleDateString()}</p>
+                                            </div>
+                                        </div>
+                                        <Button variant="ghost" size="sm" className="text-[9px] font-black uppercase tracking-tighter h-7">View</Button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
 
                     {pdfUrl && (
                         <Button 
@@ -609,8 +877,8 @@ export default function StudentDashboard() {
           )}
 
           {/* Food Poll Column */}
-          {(currentTab === 'overview' || currentTab === 'polls') && (
-            <div className={currentTab === 'overview' ? 'lg:col-span-1' : ''} id="food-polls">
+          {currentTab === 'polls' && (
+            <div className="max-w-4xl mx-auto w-full animate-in fade-in slide-in-from-bottom-4 duration-500" id="food-polls">
               <div className="flex flex-col gap-6">
                 <FoodPoll userId={user?.email || 'anonymous'} pollId="sunday_brunch" readOnly={user?.email === 'staff@checkme.com'} />
                 <FoodPoll userId={user?.email || 'anonymous'} pollId="sunday_snacks" readOnly={user?.email === 'staff@checkme.com'} />
@@ -620,16 +888,143 @@ export default function StudentDashboard() {
           )}
 
           {/* My Attendance */}
-          {(currentTab === 'overview' || currentTab === 'attendance') && (
-          <div className={currentTab === 'overview' ? 'lg:col-span-1' : ''} id="my-attendance">
+          {currentTab === 'attendance' && (
+          <div className="max-w-4xl mx-auto w-full animate-in fade-in slide-in-from-bottom-4 duration-500" id="my-attendance">
             <AttendanceTable 
               records={attendanceData}
               className="h-full"
             />
           </div>
           )}
+
+          {/* Monthly Voting Interface */}
+          {currentTab === 'voting' && (
+              <div className="max-w-5xl mx-auto w-full animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
+                  {currentUserVote ? (
+                      <Card className="bg-zinc-900 text-white rounded-3xl p-12 text-center border-none shadow-2xl overflow-hidden relative">
+                          <div className="absolute top-0 right-0 w-96 h-96 bg-green-500/10 rounded-full -translate-y-1/2 translate-x-1/2 blur-3xl"></div>
+                          <div className="relative z-10">
+                              <div className="w-20 h-20 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-6 shadow-[0_0_30px_rgba(34,197,94,0.4)]">
+                                  <CheckCircle2 className="h-10 w-10 text-black" />
+                              </div>
+                              <h2 className="text-4xl font-black mb-4">Ballot Recorded!</h2>
+                              <p className="text-zinc-400 text-lg max-w-md mx-auto leading-relaxed mb-8">
+                                  Thank you for participating. Your selections have been saved. The final menu will be generated based on the overall student consensus.
+                              </p>
+
+                              <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+                                  <Button 
+                                      onClick={handleDownloadBallotExcel}
+                                      className="bg-green-600 hover:bg-green-700 text-white font-bold h-12 px-8 rounded-2xl flex items-center gap-2 shadow-lg shadow-green-900/40"
+                                  >
+                                      <FileSpreadsheet className="h-4 w-4" />
+                                      Download Ballot Receipt (.xlsx)
+                                  </Button>
+                                  <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">
+                                      Voted On: {new Date(currentUserVote.timestamp?.toDate?.() || currentUserVote.timestamp).toLocaleString()}
+                                  </p>
+                              </div>
+
+                              <div className="mt-12 pt-12 border-t border-white/5">
+                                  <h3 className="text-xs font-black uppercase tracking-[0.3em] text-yellow-500 mb-8">Full Ballot Review</h3>
+                                  <div className="grid grid-cols-1 md:grid-cols-4 gap-6 text-left">
+                                      {surveyMeals.map(meal => (
+                                          <div key={meal} className="space-y-4">
+                                              <p className="text-[10px] font-black text-white/40 uppercase tracking-widest border-b border-white/10 pb-2">{meal}</p>
+                                              {surveyDays.map(day => {
+                                                  const slot = `${day}-${meal}`;
+                                                  const choice = currentUserVote.selections[slot];
+                                                  return (
+                                                      <div key={day} className="group">
+                                                          <p className="text-[8px] font-bold text-zinc-500 uppercase mb-1">{day}</p>
+                                                          <p className="text-xs font-bold text-zinc-300 group-hover:text-yellow-500 transition-colors">{choice}</p>
+                                                      </div>
+                                                  );
+                                              })}
+                                          </div>
+                                      ))}
+                                  </div>
+                              </div>
+                          </div>
+                      </Card>
+                  ) : activeSurvey ? (
+                      <div className="space-y-8">
+                          <div className="bg-white rounded-3xl p-8 shadow-sm flex items-center justify-between border-b-4 border-yellow-500">
+                              <div>
+                                  <h2 className="text-3xl font-black tracking-tight text-zinc-900">{activeSurvey.monthName} Selection</h2>
+                                  <p className="text-zinc-500 font-medium text-sm">Choose your preferred meal for every slot next month.</p>
+                              </div>
+                              <div className="text-right">
+                                  <p className="text-[10px] font-black uppercase text-zinc-400 tracking-widest mb-1">Status</p>
+                                  <div className="flex items-center gap-2 text-green-600 font-bold">
+                                      <span className="h-2 w-2 rounded-full bg-green-500 animate-ping"></span>
+                                      Live Now
+                                  </div>
+                              </div>
+                          </div>
+
+                          <div className="space-y-6">
+                              {surveyDays.map(day => (
+                                  <Card key={day} className="rounded-3xl border-none shadow-sm overflow-hidden bg-white">
+                                      <div className="bg-zinc-900 p-4 text-white flex items-center gap-3">
+                                          <CalendarDays className="h-4 w-4 text-yellow-500" />
+                                          <h3 className="font-black uppercase text-sm tracking-widest">{day}</h3>
+                                      </div>
+                                      <div className="p-6 grid grid-cols-1 md:grid-cols-4 gap-6">
+                                          {surveyMeals.map(meal => {
+                                              const slotId = `${day}-${meal}`;
+                                              const options = activeSurvey.slots[day]?.[meal] || [];
+                                              if (options.length < 2) return null;
+
+                                              return (
+                                                  <div key={meal} className="space-y-3">
+                                                      <p className="text-[10px] font-black uppercase text-zinc-400 tracking-widest flex items-center gap-2">
+                                                          <Utensils className="h-3 w-3" /> {meal}
+                                                      </p>
+                                                      <RadioGroup 
+                                                          onValueChange={(val) => handleSurveySelect(slotId, val)}
+                                                          value={surveySelections[slotId]}
+                                                          className="grid grid-cols-1 gap-2"
+                                                      >
+                                                          {options.map((opt: string) => (
+                                                              <div key={opt} className={`flex items-center space-x-2 border p-3 rounded-xl transition-all cursor-pointer ${surveySelections[slotId] === opt ? 'border-yellow-500 bg-yellow-50/50 shadow-sm' : 'border-zinc-100 hover:border-zinc-300 bg-white'}`}>
+                                                                  <RadioGroupItem value={opt} id={`${slotId}-${opt}`} className="text-yellow-600 border-zinc-300" />
+                                                                  <Label htmlFor={`${slotId}-${opt}`} className={`text-xs font-bold leading-tight flex-1 cursor-pointer ${surveySelections[slotId] === opt ? 'text-yellow-900' : 'text-zinc-800'}`}>{opt}</Label>
+                                                              </div>
+                                                          ))}
+                                                      </RadioGroup>
+                                                  </div>
+                                              );
+                                          })}
+                                      </div>
+                                  </Card>
+                              ))}
+                          </div>
+
+                          <div className="sticky bottom-6 left-0 right-0 z-40 bg-zinc-900 rounded-3xl p-6 text-white shadow-2xl flex items-center justify-between border border-white/5 animate-in slide-in-from-bottom-6 transition-all duration-700">
+                              <div>
+                                  <p className="text-xs font-bold text-yellow-500 uppercase tracking-widest">Progress</p>
+                                  <p className="text-lg font-black">{Object.keys(surveySelections).length} / 28 Slots Filled</p>
+                              </div>
+                              <Button 
+                                  onClick={handleSubmitMonthlyVote}
+                                  disabled={isSubmittingVote || Object.keys(surveySelections).length < 28}
+                                  className="bg-yellow-500 text-black hover:bg-yellow-400 font-black px-12 h-14 rounded-2xl shadow-xl transition-all active:scale-95"
+                              >
+                                  {isSubmittingVote ? 'Submitting Ballot...' : 'Cast Final Vote'}
+                              </Button>
+                          </div>
+                      </div>
+                  ) : (
+                      <Card className="bg-zinc-50 border-zinc-200 border-dashed p-20 text-center rounded-3xl">
+                          <Vote className="h-12 w-12 text-zinc-300 mx-auto mb-4" />
+                          <h3 className="text-xl font-bold text-zinc-400">No active monthly survey.</h3>
+                          <p className="text-sm text-zinc-500 max-w-xs mx-auto mt-2">Check back later when the mess staff releases next month's selection form.</p>
+                      </Card>
+                  )}
+              </div>
+          )}
         </div>
-        {/* End of Grid */}
       </div>
     </div>
   );

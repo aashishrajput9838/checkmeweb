@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { Users, UserCheck, Utensils, ShieldAlert, Vote, CalendarDays, LayoutDashboard } from 'lucide-react';
+import { Users, UserCheck, Utensils, ShieldAlert, Vote, CalendarDays, LayoutDashboard, CalendarCheck, BarChart3 as ChartBar, TrendingUp, LineChart } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ProtectedRoute } from '@/components/protected-route';
 import { GoogleSignIn } from '@/components/google-signin';
@@ -27,8 +27,9 @@ function DashboardSidebar({ children }: { children: React.ReactNode }) {
 
   const { user } = useAuth();
   const isStudent = user?.email?.includes('@ug.sharda.ac.in');
-  const isAdmin = user?.email === 'admin@checkme.com';
   const isStaff = user?.email === 'staff@checkme.com';
+  const isWarden = user?.email === 'warden@checkme.com';
+  const isAdmin = user?.email === 'admin@checkme.com';
 
   const navItems = [
     ...(isStudent ? [
@@ -36,6 +37,11 @@ function DashboardSidebar({ children }: { children: React.ReactNode }) {
         title: 'Students Hub',
         href: '/dashboard/student',
         icon: <LayoutDashboard className="h-4 w-4" />,
+      },
+      {
+        title: 'Monthly Vote',
+        href: '/dashboard/student?tab=voting',
+        icon: <Vote className="h-4 w-4" />,
       },
       {
         title: 'Live Menu',
@@ -55,9 +61,24 @@ function DashboardSidebar({ children }: { children: React.ReactNode }) {
     ] : []),
     ...(isStaff ? [
         {
-          title: 'Mess Dashboard',
-          href: '/dashboard/mess',
+          title: 'Mess Analytics',
+          href: '/dashboard/mess?tab=overview',
+          icon: <TrendingUp className="h-4 w-4" />,
+        },
+        {
+          title: 'Daily Menu Mgr',
+          href: '/dashboard/mess?tab=menu',
           icon: <Utensils className="h-4 w-4" />,
+        },
+        {
+          title: 'Stock Inventory',
+          href: '/dashboard/mess?tab=inventory',
+          icon: <ChartBar className="h-4 w-4" />,
+        },
+        {
+          title: 'Survey Station',
+          href: '/dashboard/mess?tab=survey',
+          icon: <Vote className="h-4 w-4" />,
         },
         {
             title: 'Live Poll Results',
@@ -65,18 +86,18 @@ function DashboardSidebar({ children }: { children: React.ReactNode }) {
             icon: <Vote className="h-4 w-4" />,
         }
       ] : []),
-    ...(!isStudent && !isAdmin && !isStaff ? [
-      {
-        title: 'Warden Dashboard',
-        href: '/dashboard/warden',
-        icon: <UserCheck className="h-4 w-4" />,
-      },
-      {
-        title: 'Mess Dashboard',
-        href: '/dashboard/mess',
-        icon: <Utensils className="h-4 w-4" />,
-      }
-    ] : []),
+    ...(isWarden ? [
+        {
+          title: 'Take Attendance',
+          href: '/dashboard/warden?tab=attendance',
+          icon: <CalendarCheck className="h-4 w-4" />,
+        },
+        {
+          title: 'Food Sentiment',
+          href: '/dashboard/warden?tab=analytics',
+          icon: <ChartBar className="h-4 w-4" />,
+        }
+      ] : []),
     ...(isAdmin ? [{
       title: 'Admin Dashboard',
       href: '/dashboard/admin',

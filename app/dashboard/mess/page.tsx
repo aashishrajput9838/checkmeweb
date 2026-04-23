@@ -12,10 +12,12 @@ import { Utensils, AlertTriangle, TrendingUp, FileText } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { AnalyticsChart } from '@/components/modules/AnalyticsChart';
 import { db } from '@/lib/firebase';
-import { doc, onSnapshot, updateDoc, collection, query } from 'firebase/firestore';
+import { doc, onSnapshot, updateDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { useSearchParams } from 'next/navigation';
 import { InventoryCard } from '@/components/modules/InventoryCard';
 import { FoodPoll } from '@/components/modules/FoodPoll';
-import { Vote } from 'lucide-react';
+import { Vote, FileSpreadsheet } from 'lucide-react';
+import { utils, writeFile } from 'xlsx';
 
 const inventoryIcons: any = {
   rice: '🍚',
@@ -29,19 +31,45 @@ const inventoryIcons: any = {
 const daysOfWeek = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 
 export default function MessDashboard() {
-  const { toast } = useToast();
+  const { toast: notify } = useToast();
+  const searchParams = useSearchParams();
+  const currentTab = searchParams.get('tab') || 'overview';
+  const [loading, setLoading] = useState(true);
   const [formMenu, setFormMenu] = useState({
     breakfast: '',
     lunch: '',
     snacks: '',
     dinner: ''
   });
-  const [loading, setLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState(false);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [inventoryList, setInventoryList] = useState<any[]>([]);
+  const [expectedDiners, setExpectedDiners] = useState<number | null>(null);
   const [foodAnalyticsData, setFoodAnalyticsData] = useState<any[]>([]);
+  const [activeSurvey, setActiveSurvey] = useState<any>(null);
+  const [surveyStats, setSurveyStats] = useState<any[]>([]);
+  const [isSurveyProcessing, setIsSurveyProcessing] = useState(false);
+  const [surveyForm, setSurveyForm] = useState<any>({
+    monthId: `${new Date().toISOString().slice(0, 7)}-${Date.now()}`,
+    monthName: new Date().toLocaleString('default', { month: 'long', year: 'numeric' }),
+    slots: {} 
+  });
   const todayName = daysOfWeek[new Date().getDay()];
+
+  const surveyDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+  const surveyMeals = ['breakfast', 'lunch', 'snacks', 'dinner'];
+
+  // Initialize surveyForm slots
+  useEffect(() => {
+    const initialSlots: any = {};
+    surveyDays.forEach(day => {
+      initialSlots[day] = {};
+      surveyMeals.forEach(meal => {
+        initialSlots[day][meal] = ['', '']; // Two empty options
+      });
+    });
+    setSurveyForm((prev: any) => ({ ...prev, slots: initialSlots }));
+  }, []);
 
   useEffect(() => {
     const todayDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
@@ -95,20 +123,118 @@ export default function MessDashboard() {
 
     const unsubscribeAnalytics = onSnapshot(query(collection(db, 'food_analytics')), (snap) => {
         const stats = snap.docs.map(doc => ({
-            dish: doc.data().dish,
-            likes: doc.data().likes || 0,
-            dislikes: doc.data().dislikes || 0
+            name: doc.id,
+            liked: doc.data().liked || 0,
+            disliked: doc.data().disliked || 0
         }));
         setFoodAnalyticsData(stats);
     });
 
+    const unsubscribeSurvey = onSnapshot(query(collection(db, 'monthly_surveys'), where('status', 'in', ['active', 'ended'])), (snap) => {
+        if (!snap.empty) {
+            const survey = { id: snap.docs[0].id, ...snap.docs[0].data() };
+            setActiveSurvey(survey);
+
+            // Listen for all votes to this survey
+            const votesRef = collection(db, 'monthly_surveys', survey.id, 'votes');
+            onSnapshot(query(votesRef), (vSnap) => {
+                const tallies: any = {};
+                vSnap.forEach(doc => {
+                    const selections = doc.data().selections;
+                    Object.entries(selections).forEach(([slot, choice]) => {
+                        if (!tallies[slot]) tallies[slot] = {};
+                        tallies[slot][choice as string] = (tallies[slot][choice as string] || 0) + 1;
+                    });
+                });
+
+                // Format for chart: Top trending slots
+                const chartData = Object.entries(tallies).map(([slot, choices]: any) => {
+                    const options = Object.keys(choices);
+                    return {
+                        name: slot.split('-')[0].charAt(0).toUpperCase() + slot.split('-')[1].charAt(0),
+                        [options[0] || 'A']: choices[options[0]] || 0,
+                        [options[1] || 'B']: choices[options[1]] || 0,
+                    };
+                }).slice(0, 7); // Show sample of 7 slots
+                setSurveyStats(chartData);
+            });
+        } else {
+            setActiveSurvey(null);
+            setSurveyStats([]);
+        }
+    });
+
     return () => {
-        unsubscribeMenu();
-        unsubscribePdf();
-        unsubscribeInventory();
-        unsubscribeAnalytics();
-    }
+      unsubscribeMenu();
+      unsubscribePdf();
+      unsubscribeInventory();
+      unsubscribeAnalytics();
+      unsubscribeSurvey();
+    };
   }, [todayName]);
+
+  const handleSurveyOptionChange = (day: string, meal: string, index: number, value: string) => {
+    setSurveyForm((prev: any) => {
+        const newSlots = { ...prev.slots };
+        newSlots[day][meal][index] = value;
+        return { ...prev, slots: newSlots };
+    });
+  };
+
+  const handleCreateSurvey = async () => {
+    setIsSurveyProcessing(true);
+    try {
+        const res = await fetch('/api/survey', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(surveyForm)
+        });
+        if (!res.ok) throw new Error('Failed to create survey');
+        notify({ title: 'Survey Launched!', description: 'Students can now vote for the next month.' });
+    } catch (error: any) {
+        notify({ title: 'Error', description: error.message, variant: 'destructive' });
+    } finally {
+        setIsSurveyProcessing(false);
+    }
+  };
+
+  const handleAutoFillSurvey = () => {
+    const samples: any = {
+      breakfast: [["Poha & Jalebi", "Idli Sambhar"], ["Sandwiches", "Alu Paratha"], ["Chole Bhature", "Bread Omelette"], ["Pancake", "Masala Dosa"], ["Upma", "Vada Pav"], ["Paneer Paratha", "Veg Cutlets"], ["Oats & Fruit", "Puri Bhaji"]],
+      lunch: [["Rajma Chawal", "Kadhi Pakora"], ["Paneer Masala", "Mix Veg"], ["Dal Tadka", "Aloo Gobi"], ["Chicken Curry", "Veg Biryani"], ["Chole Kulche", "Veg Pulao"], ["Lobhia", "Arhar Dal"], ["Bhindi Masala", "White Chana"]],
+      snacks: [["Samosa & Tea", "Spring Rolls"], ["Vada Pav", "Biscuits & Milk"], ["Kachori", "Pasta"], ["Maggi", "Veg Sandwich"], ["Dhokla", "Bhelpuri"], ["Pakora", "Muffins"], ["Corn Chat", "French Fries"]],
+      dinner: [["Dal Makhani", "Shahi Paneer"], ["Chicken Butter", "Soya Chap"], ["Veg Kofta", "Kadhai Paneer"], ["Mix Dal", "Aloo Matar"], ["Butter Chicken", "Mushroom Masala"], ["Tinda Masala", "Yellow Dal"], ["Special Veg", "Egg Curry"]]
+    };
+
+    setSurveyForm((prev: any) => {
+        const newSlots = { ...prev.slots };
+        surveyDays.forEach((day, dayIdx) => {
+            surveyMeals.forEach((meal) => {
+                newSlots[day][meal] = samples[meal][dayIdx % 7];
+            });
+        });
+        return { ...prev, slots: newSlots };
+    });
+    notify({ title: 'Magic Fill Complete!', description: 'The form has been populated with balanced options.' });
+  };
+
+  const handleGenerateFinalMenu = async () => {
+    if (!activeSurvey) return;
+    setIsSurveyProcessing(true);
+    try {
+        const res = await fetch('/api/survey/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ monthId: activeSurvey.id })
+        });
+        if (!res.ok) throw new Error('Menu generation failed');
+        notify({ title: 'Menu Generated!', description: 'The weekly schedule has been updated with winners.' });
+    } catch (error: any) {
+        notify({ title: 'Error', description: error.message, variant: 'destructive' });
+    } finally {
+        setIsSurveyProcessing(false);
+    }
+  };
 
   const handleMenuUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -122,13 +248,13 @@ export default function MessDashboard() {
         updatedAt: new Date().toISOString()
       });
       
-      toast({
+      notify({
         title: "Today's Menu Updated!",
         description: `Emergency override active for ${todayDate}. This will only affect today.`,
       });
     } catch (error) {
       console.error("Error updating menu:", error);
-      toast({
+      notify({
         title: 'Error',
         description: 'Failed to update the menu. Please try again.',
         variant: 'destructive',
@@ -148,13 +274,13 @@ export default function MessDashboard() {
         const todayDate = new Date().toISOString().split('T')[0];
         await deleteDoc(doc(db, 'daily_overrides', todayDate));
         
-        toast({
+        notify({
             title: 'Menu Reset!',
             description: 'Today\'s emergency override has been removed. Reverting to weekly menu.',
         });
     } catch (error) {
         console.error("Error resetting menu:", error);
-        toast({
+        notify({
             title: 'Reset Failed',
             description: 'Could not revert to weekly menu.',
             variant: 'destructive'
@@ -163,6 +289,29 @@ export default function MessDashboard() {
         setIsUpdating(false);
     }
   };
+
+  // Integrated Data: Fetch Attendance for Today to calculate expected diners
+  useEffect(() => {
+    const today = new Date().toISOString().split('T')[0];
+    const unsubStudents = onSnapshot(query(collection(db, 'users'), where('role', '==', 'student')), (studentSnap) => {
+        const totalStudents = studentSnap.size;
+        
+        const unsubAttendance = onSnapshot(doc(db, 'attendance', today), (attSnap) => {
+            if (attSnap.exists()) {
+                const records = attSnap.data().records || {};
+                const absentCount = Object.values(records).filter(status => status === 'Absent').length;
+                // If many aren't marked yet, we assume they are coming, but we subtract known absents.
+                setExpectedDiners(totalStudents - absentCount);
+            } else {
+                setExpectedDiners(totalStudents);
+            }
+        });
+
+        return () => unsubAttendance();
+    });
+
+    return () => unsubStudents();
+  }, []);
 
   const handleInputChange = (field: string, value: string) => {
     setFormMenu(prev => ({ ...prev, [field]: value }));
@@ -211,137 +360,299 @@ export default function MessDashboard() {
           </div>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Update Menu Form */}
-          <div className="lg:col-span-1">
-            <Card className="h-full border-2 border-yellow-300">
-              <CardHeader>
-                <div className="flex items-center gap-2">
-                  <Utensils className="h-5 w-5" />
-                  <CardTitle>Daily Menu Overwrite</CardTitle>
+        {/* Integrated Overview Metrics - Only show in Overview */}
+        {currentTab === 'overview' && (
+            <>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 animate-in fade-in slide-in-from-top-4 duration-500">
+                    <Card className="border-2 border-zinc-100 shadow-sm relative overflow-hidden">
+                        <div className="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>
+                        <CardHeader className="pb-2">
+                            <CardTitle className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Inventory Health</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <p className="text-4xl font-black text-zinc-900">{inventoryList.length}</p>
+                            <p className="text-[10px] text-zinc-500 mt-1 uppercase font-bold">Cloud-Synced Items</p>
+                        </CardContent>
+                    </Card>
+
+                    <Card className="border-2 border-zinc-100 shadow-sm relative overflow-hidden bg-zinc-900 text-white">
+                        <div className="absolute top-0 left-0 w-1 h-full bg-green-400"></div>
+                        <CardHeader className="pb-2">
+                            <CardTitle className="text-xs font-bold text-zinc-400 uppercase tracking-widest">Expected Diners (Live)</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <p className="text-4xl font-black text-white">
+                                {expectedDiners !== null ? expectedDiners : '--'}
+                            </p>
+                            <p className="text-[10px] text-green-400 mt-1 uppercase font-bold">Calculating vs Warden Absents</p>
+                        </CardContent>
+                    </Card>
+
+                    <Card className="border-2 border-zinc-100 shadow-sm relative overflow-hidden">
+                        <div className="absolute top-0 left-0 w-1 h-full bg-yellow-500"></div>
+                        <CardHeader className="pb-2">
+                            <CardTitle className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Sentiment Hub</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <p className="text-4xl font-black text-zinc-900">7.2 <span className="text-sm font-normal text-zinc-400">/ 10</span></p>
+                            <p className="text-[10px] text-zinc-500 mt-1 uppercase font-bold">Real-time Student Feedback</p>
+                        </CardContent>
+                    </Card>
                 </div>
-                <p className="text-sm text-red-500 font-bold uppercase tracking-tight">⚠️ Affects today only: {new Date().toLocaleDateString()}</p>
-              </CardHeader>
-              <CardContent>
-                {loading ? (
-                  <div className="flex justify-center p-8">
-                    <p className="text-yellow-600 animate-pulse">Loading menu...</p>
-                  </div>
-                ) : (
-                  <form onSubmit={handleMenuUpdate}>
-                    <div className="space-y-4">
-                      <div>
-                        <label htmlFor="breakfast" className="block text-sm font-medium mb-1">
-                          Breakfast
-                        </label>
-                        <Textarea 
-                          id="breakfast" 
-                          placeholder="Enter breakfast items (comma-separated)" 
-                          value={formMenu.breakfast}
-                          onChange={(e) => handleInputChange('breakfast', e.target.value)}
-                          rows={2}
-                        />
-                      </div>
-                      <div>
-                        <label htmlFor="lunch" className="block text-sm font-medium mb-1">
-                          Lunch
-                        </label>
-                        <Textarea 
-                          id="lunch" 
-                          placeholder="Enter lunch items (comma-separated)" 
-                          value={formMenu.lunch}
-                          onChange={(e) => handleInputChange('lunch', e.target.value)}
-                          rows={2}
-                        />
-                      </div>
-                      <div>
-                        <label htmlFor="snacks" className="block text-sm font-medium mb-1">
-                          Snacks
-                        </label>
-                        <Textarea 
-                          id="snacks" 
-                          placeholder="Enter snack items (comma-separated)" 
-                          value={formMenu.snacks}
-                          onChange={(e) => handleInputChange('snacks', e.target.value)}
-                          rows={2}
-                        />
-                      </div>
-                      <div>
-                        <label htmlFor="dinner" className="block text-sm font-medium mb-1">
-                          Dinner
-                        </label>
-                        <Textarea 
-                          id="dinner" 
-                          placeholder="Enter dinner items (comma-separated)" 
-                          value={formMenu.dinner}
-                          onChange={(e) => handleInputChange('dinner', e.target.value)}
-                          rows={2}
-                        />
-                      </div>
-                      <div className="flex flex-col gap-3">
-                        <Button 
-                            type="submit" 
-                            disabled={isUpdating}
-                            className="w-full bg-yellow-500 hover:bg-yellow-600 text-black flex items-center justify-center gap-2"
-                        >
-                            {isUpdating && <div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin"></div>}
-                            {isUpdating ? 'Updating...' : 'Update Live Menu'}
-                        </Button>
-                        <Button 
-                            type="button" 
-                            variant="outline"
-                            onClick={handleReset}
-                            className="w-full border-zinc-200 hover:bg-zinc-50 text-zinc-500 font-medium"
-                            disabled={isUpdating}
-                        >
-                            Reset to Regular Menu
-                        </Button>
-                      </div>
-                    </div>
-                  </form>
-                )}
-              </CardContent>
-            </Card>
-          </div>
 
-          {/* Food Analytics Chart */}
-          <div className="lg:col-span-1">
-            <AnalyticsChart 
-              data={foodAnalyticsData}
-              className="h-full"
-            />
-          </div>
-        </div>
+                <div className="flex flex-col gap-6">
+                    <Card className="p-6">
+                        <CardHeader className="px-0 pt-0">
+                            <CardTitle>Performance Analytics</CardTitle>
+                            <p className="text-sm text-muted-foreground uppercase font-bold tracking-widest">Likes vs Dislikes</p>
+                        </CardHeader>
+                        <CardContent className="px-0">
+                            <AnalyticsChart data={foodAnalyticsData} className="h-[500px]" />
+                        </CardContent>
+                    </Card>
+                </div>
+            </>
+        )}
 
-        {/* Inventory Section */}
-        <div className="mt-6 mb-20">
-          <Card className="bg-zinc-50 border-zinc-200">
-            <CardHeader className="pb-4">
-              <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle className="text-xl font-bold">Real-time Stock Management</CardTitle>
-                    <p className="text-sm text-muted-foreground italic">Manage inventory levels instantly (Cloud Synced)</p>
-                  </div>
-                  <div className="bg-zinc-900 text-white px-3 py-1 rounded text-[10px] font-bold uppercase tracking-widest">
-                      Live
-                  </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-                {inventoryList.length > 0 ? (
-                    inventoryList.map((item) => (
-                        <InventoryCard key={item.id} item={{ ...item, icon: inventoryIcons[item.name.toLowerCase()] || '📦' }} />
-                    ))
+        {currentTab === 'menu' && (
+            <div className="max-w-4xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <Card className="border-2 border-yellow-300 relative overflow-hidden">
+                    <div className="absolute top-0 left-0 w-full h-2 bg-yellow-400"></div>
+                    <CardHeader className="pt-8">
+                        <div className="flex items-center gap-2">
+                            <Utensils className="h-6 w-6 text-yellow-600" />
+                            <CardTitle className="text-2xl font-black">Daily Menu Overwrite</CardTitle>
+                        </div>
+                        <p className="text-sm text-red-500 font-bold uppercase tracking-tight">⚠️ Affects today only: {new Date().toLocaleDateString()}</p>
+                    </CardHeader>
+                    <CardContent>
+                        {loading ? (
+                            <div className="flex justify-center p-8">
+                                <p className="text-yellow-600 animate-pulse">Loading menu...</p>
+                            </div>
+                        ) : (
+                            <form onSubmit={handleMenuUpdate}>
+                                <div className="space-y-6">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-bold uppercase text-zinc-500">Breakfast</label>
+                                            <Textarea value={formMenu.breakfast} onChange={(e)=>handleInputChange('breakfast', e.target.value)} rows={3} className="border-zinc-200" />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-bold uppercase text-zinc-500">Lunch</label>
+                                            <Textarea value={formMenu.lunch} onChange={(e)=>handleInputChange('lunch', e.target.value)} rows={3} className="border-zinc-200" />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-bold uppercase text-zinc-500">Snacks</label>
+                                            <Textarea value={formMenu.snacks} onChange={(e)=>handleInputChange('snacks', e.target.value)} rows={3} className="border-zinc-200" />
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-bold uppercase text-zinc-500">Dinner</label>
+                                            <Textarea value={formMenu.dinner} onChange={(e)=>handleInputChange('dinner', e.target.value)} rows={3} className="border-zinc-200" />
+                                        </div>
+                                    </div>
+                                    <div className="flex flex-col gap-3 pt-4">
+                                        <Button type="submit" disabled={isUpdating} className="bg-yellow-500 hover:bg-yellow-600 text-black font-bold h-12 rounded-xl">
+                                            {isUpdating ? 'Publishing Changes...' : 'Push Live Menu Update'}
+                                        </Button>
+                                        <Button type="button" variant="ghost" onClick={handleReset} className="text-zinc-400 hover:text-red-500">
+                                            Clear All Overrides & Use Weekly Menu
+                                        </Button>
+                                    </div>
+                                </div>
+                            </form>
+                        )}
+                    </CardContent>
+                </Card>
+            </div>
+        )}
+
+        {currentTab === 'inventory' && (
+            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <Card className="bg-zinc-50 border-zinc-200">
+                    <CardHeader className="pb-8 border-b bg-white">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <CardTitle className="text-3xl font-black tracking-tight">Real-time Stock Management</CardTitle>
+                                <p className="text-sm text-muted-foreground italic">Manage inventory levels instantly (Cloud Synced)</p>
+                            </div>
+                            <div className="bg-green-500 text-white px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-widest animate-pulse">
+                                Live
+                            </div>
+                        </div>
+                    </CardHeader>
+                    <CardContent className="p-8">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+                            {inventoryList.length > 0 ? (
+                                inventoryList.map((item) => (
+                                    <InventoryCard key={item.id} item={{ ...item, icon: inventoryIcons[item.name.toLowerCase()] || '📦' }} />
+                                ))
+                            ) : (
+                                <div className="col-span-full p-20 text-center text-zinc-400 border-2 border-dashed rounded-3xl">
+                                    Syncing cloud inventory...
+                                </div>
+                            )}
+                        </div>
+                    </CardContent>
+                </Card>
+            </div>
+        )}
+
+        {currentTab === 'survey' && (
+            <div className="animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
+                {activeSurvey ? (
+                    <Card className="border-none shadow-xl bg-zinc-900 text-white rounded-3xl overflow-hidden mb-8">
+                        <div className="p-8">
+                            <div className="flex justify-between items-start mb-8">
+                                <div>
+                                    <h2 className="text-3xl font-black tracking-tight">{activeSurvey.monthName} Survey</h2>
+                                    <p className="text-zinc-400 font-medium">Status: <span className="text-green-400 capitalize">{activeSurvey.status}</span></p>
+                                </div>
+                                <Button 
+                                    onClick={handleGenerateFinalMenu}
+                                    disabled={isSurveyProcessing}
+                                    className="bg-yellow-500 text-black hover:bg-yellow-400 font-bold px-6 py-6 rounded-2xl flex items-center gap-2 shadow-[0_0_20px_rgba(234,179,8,0.3)]"
+                                >
+                                    {isSurveyProcessing && <div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin"></div>}
+                                    Final Tally & Update Menu
+                                </Button>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                                <Card className="bg-white/5 border-white/10 text-white p-4">
+                                    <p className="text-[10px] text-zinc-500 uppercase font-black tracking-widest mb-1">Total Slots</p>
+                                    <p className="text-2xl font-black">21 <span className="text-xs font-normal text-zinc-500">Meals</span></p>
+                                </Card>
+                                <Card className="bg-white/5 border-white/10 text-white p-4">
+                                    <p className="text-[10px] text-zinc-500 uppercase font-black tracking-widest mb-1">Options per Slot</p>
+                                    <p className="text-2xl font-black">2 <span className="text-xs font-normal text-zinc-500">Choices</span></p>
+                                </Card>
+                                <Card className="bg-white/5 border-white/10 text-white p-4">
+                                    <p className="text-[10px] text-zinc-500 uppercase font-black tracking-widest mb-1">Vote Strategy</p>
+                                    <p className="text-lg font-bold">Plurality Winner</p>
+                                </Card>
+                                <Card className="bg-white/5 border-white/10 text-white p-4">
+                                    <p className="text-[10px] text-zinc-500 uppercase font-black tracking-widest mb-1">Auto-Publish</p>
+                                    <p className="text-lg font-bold text-green-400">ENABLED</p>
+                                </Card>
+                            </div>
+
+                            {surveyStats.length > 0 && (
+                                <div className="mt-8 pt-8 border-t border-white/5">
+                                    <h3 className="text-xs font-black uppercase text-zinc-500 tracking-widest mb-6">Vote Distribution (Top Trending Slots)</h3>
+                                    <div className="h-[250px] w-full">
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <BarChart data={surveyStats}>
+                                                <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
+                                                <XAxis dataKey="name" stroke="#666" fontSize={10} />
+                                                <Tooltip 
+                                                    contentStyle={{ backgroundColor: '#18181b', border: '1px solid #333', borderRadius: '8px' }}
+                                                    itemStyle={{ color: '#fff', fontSize: '11px' }}
+                                                />
+                                                <Bar dataKey={Object.keys(surveyStats[0]).find(k => k !== 'name') || 'A'} fill="#eab308" radius={[4, 4, 0, 0]} />
+                                                <Bar dataKey={Object.keys(surveyStats[0]).filter(k => k !== 'name')[1] || 'B'} fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                                            </BarChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                        <div className="bg-yellow-500/10 p-4 border-t border-white/5 text-center">
+                            <p className="text-xs font-bold text-yellow-500 uppercase tracking-widest">
+                                💡 Tip: Generation will search all student votes and pick the top favorite for each specific day/meal.
+                            </p>
+                        </div>
+                    </Card>
                 ) : (
-                    <div className="col-span-full p-12 text-center text-zinc-400 border-2 border-dashed rounded-xl">
-                        Loading cloud inventory...
-                    </div>
+                    <Card className="border-none shadow-2xl rounded-3xl overflow-hidden bg-white">
+                        <div className="bg-zinc-900 p-8 text-white flex items-center justify-between">
+                            <div>
+                                <div className="flex items-center gap-3 mb-2">
+                                    <Vote className="h-6 w-6 text-yellow-500" />
+                                    <h3 className="text-2xl font-black tracking-tight">Create Monthly Food Survey</h3>
+                                </div>
+                                <p className="text-zinc-400 text-sm">Design the ballot for next month's menu selections.</p>
+                            </div>
+                            <Button 
+                                onClick={handleAutoFillSurvey}
+                                variant="outline"
+                                className="border-yellow-500/50 text-yellow-500 hover:bg-yellow-500 hover:text-black font-black uppercase text-[10px] tracking-[0.2em] px-6 h-10 rounded-xl transition-all"
+                            >
+                                ✨ Magic Auto-Fill
+                            </Button>
+                        </div>
+                        
+                        <div className="p-8">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
+                                <div className="space-y-2">
+                                    <label className="text-xs font-black uppercase text-zinc-400 tracking-widest">Survey Month (ID)</label>
+                                    <Input 
+                                        placeholder="e.g., 2026-05" 
+                                        value={surveyForm.monthId}
+                                        onChange={(e)=>setSurveyForm({...surveyForm, monthId: e.target.value})}
+                                        className="h-12 border-zinc-200 font-bold"
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="text-xs font-black uppercase text-zinc-400 tracking-widest">Display Title</label>
+                                    <Input 
+                                        placeholder="e.g., May 2026 Special Menu Build" 
+                                        value={surveyForm.monthName}
+                                        onChange={(e)=>setSurveyForm({...surveyForm, monthName: e.target.value})}
+                                        className="h-12 border-zinc-200 font-bold"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="space-y-12">
+                                {surveyDays.map(day => (
+                                    <div key={day} className="border-b border-zinc-100 pb-10 last:border-0">
+                                        <h4 className="text-xl font-black capitalize mb-6 flex items-center gap-3">
+                                            <span className="w-8 h-8 rounded-lg bg-zinc-900 text-white flex items-center justify-center text-xs">{day[0].toUpperCase()}</span>
+                                            {day} Schedule
+                                        </h4>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+                                            {surveyMeals.map(meal => (
+                                                <div key={meal} className="space-y-4">
+                                                    <label className="text-[10px] font-black uppercase text-zinc-500 tracking-widest flex items-center gap-2">
+                                                        <Utensils className="h-3 w-3" /> {meal}
+                                                    </label>
+                                                    <div className="space-y-2">
+                                                        <Input 
+                                                            placeholder="Choice A" 
+                                                            className="text-xs border-zinc-200 h-9 bg-zinc-50 focus:bg-white transition-all shadow-sm"
+                                                            value={surveyForm.slots[day]?.[meal]?.[0] || ''}
+                                                            onChange={(e) => handleSurveyOptionChange(day, meal, 0, e.target.value)}
+                                                        />
+                                                        <Input 
+                                                            placeholder="Choice B" 
+                                                            className="text-xs border-zinc-200 h-9 bg-zinc-50 focus:bg-white transition-all shadow-sm"
+                                                            value={surveyForm.slots[day]?.[meal]?.[1] || ''}
+                                                            onChange={(e) => handleSurveyOptionChange(day, meal, 1, e.target.value)}
+                                                        />
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div className="mt-12 flex justify-end gap-4 border-t pt-8">
+                                <Button variant="ghost" className="h-14 px-8 font-bold text-zinc-500">Discard Draft</Button>
+                                <Button 
+                                    onClick={handleCreateSurvey}
+                                    disabled={isSurveyProcessing}
+                                    className="h-14 px-12 bg-zinc-900 text-white hover:bg-black font-black uppercase tracking-widest text-xs rounded-2xl shadow-xl transition-all hover:scale-[1.02] active:scale-[0.98]"
+                                >
+                                    {isSurveyProcessing ? 'Launching...' : 'Activate Monthly Survey'}
+                                </Button>
+                            </div>
+                        </div>
+                    </Card>
                 )}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+            </div>
+        )}
       </div>
     </div>
   );

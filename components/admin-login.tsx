@@ -9,7 +9,7 @@ import { auth } from '@/lib/firebase';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 
-export function AdminLogin({ isStaff = false }: { isStaff?: boolean }) {
+export function AdminLogin({ role = 'admin' }: { role?: 'staff' | 'warden' | 'admin' }) {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -22,12 +22,19 @@ export function AdminLogin({ isStaff = false }: { isStaff?: boolean }) {
 
         try {
             await signInWithEmailAndPassword(auth, email, password);
+            const displayRole = role.charAt(0).toUpperCase() + role.slice(1);
             toast({
                 title: 'Welcome Back!',
-                description: `Signed in as ${email === 'staff@checkme.com' ? 'Staff' : 'Admin'}.`,
+                description: `Signed in as ${displayRole}.`,
             });
-            router.push(email === 'staff@checkme.com' ? '/dashboard/mess' : '/dashboard/admin'); 
-        } catch (error: any) {
+            
+            if (email === 'staff@checkme.com' || role === 'staff') {
+                router.push('/dashboard/mess');
+            } else if (email === 'warden@checkme.com' || role === 'warden') {
+                router.push('/dashboard/warden');
+            } else {
+                router.push('/dashboard/admin');
+            }        } catch (error: any) {
             console.error('Login error:', error);
             let errorMessage = 'Failed to sign in. Please check your credentials.';
             if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
@@ -70,9 +77,13 @@ export function AdminLogin({ isStaff = false }: { isStaff?: boolean }) {
             <Button
                 type="submit"
                 disabled={isLoading}
-                className={`w-full font-semibold ${isStaff ? 'bg-yellow-500 hover:bg-yellow-600 text-black' : 'bg-red-500 hover:bg-red-600 text-white'}`}
+                className={`w-full font-semibold ${
+                    role === 'staff' ? 'bg-zinc-100 hover:bg-zinc-200 text-black' : 
+                    role === 'warden' ? 'bg-blue-500 hover:bg-blue-600 text-white' : 
+                    'bg-red-500 hover:bg-red-600 text-white'
+                }`}
             >
-                {isLoading ? 'Signing in...' : `Sign in as ${isStaff ? 'Staff' : 'Admin'}`}
+                {isLoading ? 'Signing in...' : `Sign in as ${role.charAt(0).toUpperCase() + role.slice(1)}`}
             </Button>
         </form>
     );

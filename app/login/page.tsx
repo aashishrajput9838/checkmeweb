@@ -9,7 +9,7 @@ import { useRouter } from "next/navigation";
 export default function LoginPage() {
     const { user, loading } = useAuth();
     const router = useRouter();
-    const [loginRole, setLoginRole] = useState<'student' | 'staff' | 'admin'>('student');
+    const [loginRole, setLoginRole] = useState<'student' | 'staff' | 'warden' | 'admin'>('student');
 
     useEffect(() => {
         if (!loading && user) {
@@ -17,6 +17,8 @@ export default function LoginPage() {
                 router.push('/dashboard/admin'); 
             } else if (user.email === 'staff@checkme.com') {
                 router.push('/dashboard/mess');
+            } else if (user.email === 'warden@checkme.com') {
+                router.push('/dashboard/warden');
             } else {
                 router.push("/dashboard/student");
             }
@@ -31,19 +33,25 @@ export default function LoginPage() {
                 
                 <div className="flex bg-zinc-900 rounded-lg p-1 mb-8">
                     <button 
-                        className={`flex-1 py-2 text-xs rounded-md transition-colors ${loginRole === 'student' ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-400 hover:text-white'}`}
+                        className={`flex-1 py-1 text-[10px] uppercase font-bold tracking-widest rounded-md transition-all ${loginRole === 'student' ? 'bg-zinc-800 text-white shadow-sm' : 'text-zinc-500 hover:text-white'}`}
                         onClick={() => setLoginRole('student')}
                     >
                         Student
                     </button>
                     <button 
-                        className={`flex-1 py-2 text-xs rounded-md transition-colors ${loginRole === 'staff' ? 'bg-yellow-500 text-black shadow-sm font-semibold' : 'text-zinc-400 hover:text-white'}`}
+                        className={`flex-1 py-1 text-[10px] uppercase font-bold tracking-widest rounded-md transition-all ${loginRole === 'staff' ? 'bg-white text-black shadow-sm' : 'text-zinc-500 hover:text-white'}`}
                         onClick={() => setLoginRole('staff')}
                     >
                         Staff
                     </button>
                     <button 
-                        className={`flex-1 py-2 text-xs rounded-md transition-colors ${loginRole === 'admin' ? 'bg-red-500 text-white shadow-sm font-semibold' : 'text-zinc-400 hover:text-white'}`}
+                        className={`flex-1 py-1 text-[10px] uppercase font-bold tracking-widest rounded-md transition-all ${loginRole === 'warden' ? 'bg-blue-500 text-white shadow-sm' : 'text-zinc-500 hover:text-white'}`}
+                        onClick={() => setLoginRole('warden')}
+                    >
+                        Warden
+                    </button>
+                    <button 
+                        className={`flex-1 py-1 text-[10px] uppercase font-bold tracking-widest rounded-md transition-all ${loginRole === 'admin' ? 'bg-red-500 text-white shadow-sm' : 'text-zinc-500 hover:text-white'}`}
                         onClick={() => setLoginRole('admin')}
                     >
                         Admin
@@ -58,7 +66,7 @@ export default function LoginPage() {
                         </div>
                     ) : (
                         <div className="w-full">
-                            <AdminLogin isStaff={loginRole === 'staff'} />
+                            <AdminLogin role={loginRole as 'staff' | 'warden' | 'admin'} />
                         </div>
                     )}
                 </div>

@@ -4,11 +4,13 @@ import { doc, updateDoc, increment, setDoc, getDoc } from 'firebase/firestore';
 
 export async function POST(request: Request) {
   try {
-    const { dishName, type, userId } = await request.json(); // type: 'like' | 'dislike'
+    const body = await request.json();
+    console.log('Feedback API Payload:', body);
+    const { dishName, type, userId } = body;
     
-    if (!dishName || !type || !userId) {
-      return NextResponse.json({ error: 'Missing fields' }, { status: 400 });
-    }
+    if (!dishName) return NextResponse.json({ error: 'Missing dishName' }, { status: 400 });
+    if (!type) return NextResponse.json({ error: 'Missing feedback type' }, { status: 400 });
+    if (!userId) return NextResponse.json({ error: 'Missing userId (Email)' }, { status: 400 });
 
     const dishId = dishName.toLowerCase().replace(/\s+/g, '_');
     const dishRef = doc(db, 'food_analytics', dishId);

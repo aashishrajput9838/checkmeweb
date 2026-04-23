@@ -1,6 +1,8 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { CalendarDays } from 'lucide-react';
+import { CalendarDays, Download } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import * as XLSX from 'xlsx';
 
 interface AttendanceRecord {
   date: string;
@@ -18,12 +20,39 @@ export function AttendanceTable({
   records, 
   className 
 }: AttendanceTableProps) {
+  const downloadHistory = () => {
+    if (!records || records.length === 0) return;
+    
+    const data = records.map(r => ({
+      'Date': r.date,
+      'Status': r.status
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(data);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "My Attendance");
+    XLSX.writeFile(workbook, `My_Attendance_Report.xlsx`);
+  };
+
   return (
     <Card className={`h-full border-2 border-gray-200 ${className}`}>
       <CardHeader>
-        <div className="flex items-center gap-2">
-          <CalendarDays className="h-5 w-5" />
-          <CardTitle>{title}</CardTitle>
+        <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+                <CalendarDays className="h-5 w-5" />
+                <CardTitle>{title}</CardTitle>
+            </div>
+            {records && records.length > 0 && (
+                <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    onClick={downloadHistory}
+                    className="text-xs flex items-center gap-2 text-zinc-500 hover:text-blue-600"
+                >
+                    <Download className="h-3 w-3" />
+                    Download
+                </Button>
+            )}
         </div>
         <p className="text-sm text-muted-foreground">Attendance record</p>
       </CardHeader>
@@ -36,7 +65,7 @@ export function AttendanceTable({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {records.map((record, index) => (
+            {records?.map((record, index) => (
               <TableRow key={index}>
                 <TableCell>{record.date}</TableCell>
                 <TableCell>

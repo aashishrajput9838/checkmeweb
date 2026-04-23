@@ -30,7 +30,9 @@ export function MenuCard({ title = "Today's Menu", menu, timings, className, use
   const [submitting, setSubmitting] = useState<string | null>(null); // item_type
 
   const handleFeedback = async (dishName: string, type: 'like' | 'dislike') => {
+    console.log(`Submitting ${type} for ${dishName}...`);
     if (!userId) {
+        console.warn('Feedback blocked: No userId found.');
         toast({ title: 'Authentication Required', description: 'Please sign in to give feedback.', variant: 'destructive' });
         return;
     }
@@ -47,6 +49,7 @@ export function MenuCard({ title = "Today's Menu", menu, timings, className, use
 
       if (!res.ok) {
         const data = await res.json();
+        console.error('Feedback API Error detail:', data);
         throw new Error(data.error || 'Failed to submit feedback');
       }
 
@@ -106,20 +109,34 @@ export function MenuCard({ title = "Today's Menu", menu, timings, className, use
                       </div>
                       <div className="flex items-center gap-1">
                         <button 
-                            onClick={() => handleFeedback(item, 'like')}
-                            disabled={submitting === `${item}_like`}
-                            className="p-1.5 rounded-md hover:bg-green-50 text-zinc-400 hover:text-green-600 transition-colors disabled:opacity-50"
-                            title="I like this!"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                handleFeedback(item, 'like');
+                            }}
+                            disabled={submitting !== null}
+                            className={`p-2 rounded-lg transition-all duration-200 ${
+                                submitting === `${item}_like` 
+                                ? 'bg-green-100 text-green-700' 
+                                : 'hover:bg-green-50 text-zinc-400 hover:text-green-600'
+                            } disabled:opacity-50`}
+                            title="I like this meal"
                         >
-                            <ThumbsUp className={`h-3.5 w-3.5 ${submitting === `${item}_like` ? 'animate-bounce' : ''}`} />
+                            <ThumbsUp className={`h-4 w-4 ${submitting === `${item}_like` ? 'animate-bounce' : ''}`} />
                         </button>
                         <button 
-                            onClick={() => handleFeedback(item, 'dislike')}
-                            disabled={submitting === `${item}_dislike`}
-                            className="p-1.5 rounded-md hover:bg-red-50 text-zinc-400 hover:text-red-600 transition-colors disabled:opacity-50"
-                            title="I don't like this"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                handleFeedback(item, 'dislike');
+                            }}
+                            disabled={submitting !== null}
+                            className={`p-2 rounded-lg transition-all duration-200 ${
+                                submitting === `${item}_dislike` 
+                                ? 'bg-red-100 text-red-700' 
+                                : 'hover:bg-red-50 text-zinc-400 hover:text-red-600'
+                            } disabled:opacity-50`}
+                            title="I don't like this meal"
                         >
-                            <ThumbsDown className={`h-3.5 w-3.5 ${submitting === `${item}_dislike` ? 'animate-bounce' : ''}`} />
+                            <ThumbsDown className={`h-4 w-4 ${submitting === `${item}_dislike` ? 'animate-bounce' : ''}`} />
                         </button>
                       </div>
                     </li>
