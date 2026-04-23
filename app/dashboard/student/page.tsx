@@ -12,6 +12,7 @@ import { CalendarDays, Utensils, Vote, Clock } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { MenuCard } from '@/components/modules/MenuCard';
 import { AttendanceTable } from '@/components/modules/AttendanceTable';
+import { FoodPoll } from '@/components/modules/FoodPoll';
 import { db, storage } from '@/lib/firebase';
 import { doc, onSnapshot, getDoc, setDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -583,46 +584,11 @@ export default function StudentDashboard() {
             </div>
           )}
 
-          {/* Food Polls */}
-          {(currentTab === 'overview' || currentTab === 'polls') && (
-          <div className={currentTab === 'overview' ? 'lg:col-span-1' : ''} id="food-polls">
-            <Card className="h-full border-2 border-dashed border-yellow-300">
-              <CardHeader>
-                <div className="flex items-center gap-2">
-                  <Vote className="h-5 w-5" />
-                  <CardTitle>Food Poll</CardTitle>
-                </div>
-                <p className="text-sm text-muted-foreground">Vote for Sunday Special</p>
-              </CardHeader>
-              <CardContent>
-                <RadioGroup 
-                  className="space-y-4" 
-                  onValueChange={(value) => handleVote(value)}
-                >
-                  {foodPollOptions.map((option) => (
-                    <div key={option.id} className="flex items-center space-x-3">
-                      <RadioGroupItem value={option.id} id={option.id} />
-                      <Label htmlFor={option.id} className="flex-1">
-                        <div className="flex justify-between items-center">
-                          <span>{option.label}</span>
-                          <span className="text-sm text-muted-foreground">{option.votes} votes</span>
-                        </div>
-                      </Label>
-                    </div>
-                  ))}
-                </RadioGroup>
-                <Button 
-                  className="w-full mt-4 bg-yellow-500 hover:bg-yellow-600 text-black"
-                  onClick={() => toast({
-                    title: 'Poll Submitted!',
-                    description: 'Thank you for your vote!'
-                  })}
-                >
-                  Submit Vote
-                </Button>
-              </CardContent>
-            </Card>
-          </div>
+          {/* Food Poll Column */}
+          {(currentTab === 'overview' || currentTab === 'poll') && (
+            <div className={currentTab === 'overview' ? 'lg:col-span-1' : ''} id="food-polls">
+              <FoodPoll userId={user?.email || 'anonymous'} />
+            </div>
           )}
 
           {/* My Attendance */}
