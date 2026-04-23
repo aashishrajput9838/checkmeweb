@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
 import { ProtectedRoute } from '@/components/protected-route';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { setDoc, deleteDoc } from 'firebase/firestore';
@@ -32,6 +33,7 @@ const inventoryIcons: any = {
 const daysOfWeek = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 
 export default function MessDashboard() {
+  const { user } = useAuth();
   const { toast: notify } = useToast();
   const searchParams = useSearchParams();
   const currentTab = searchParams.get('tab') || 'overview';
@@ -73,106 +75,102 @@ export default function MessDashboard() {
   }, []);
 
   useEffect(() => {
+    if (!user) return;
+    
     const todayDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+    let unsubs: any[] = [];
 
-    const unsubscribeMenu = onSnapshot(doc(db, 'mess_menu', 'weekly'), (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        if (data && data[todayName]) {
-          const todays = data[todayName];
-          setFormMenu({
-            breakfast: todays.breakfast ? todays.breakfast.join(', ') : '',
-            lunch: todays.lunch ? todays.lunch.join(', ') : '',
-            snacks: todays.snacks ? todays.snacks.join(', ') : '',
-            dinner: todays.dinner ? todays.dinner.join(', ') : '',
-          });
-        }
-      }
-      
-      // Override with today's specific emergency menu if it exists
-      onSnapshot(doc(db, 'daily_overrides', todayDate), (overrideSnap) => {
-        if (overrideSnap.exists()) {
-          const data = overrideSnap.data();
-          setFormMenu({
-            breakfast: data.breakfast || '',
-            lunch: data.lunch || '',
-            snacks: data.snacks || '',
-            dinner: data.dinner || '',
-          });
-        }
-      });
+    const setupSubscriptions = async () => {
+        try {
+            const userDoc = await getDoc(doc(db, 'users', user.email!));
+            const role = userDoc.exists() ? userDoc.data()?.role : 'student';
 
-      setLoading(false);
-    }, (error) => {
-      console.error("Error fetching menu:", error);
-      setLoading(false);
-    });
-
-    const unsubscribePdf = onSnapshot(doc(db, 'mess_menu', 'pdfContent'), (docSnap) => {
-      if (docSnap.exists() && docSnap.data().url) {
-        setPdfUrl(docSnap.data().url);
-      }
-    });
-
-    const unsubscribeInventory = onSnapshot(query(collection(db, 'inventory')), (snap) => {
-        const items = snap.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-        }));
-        setInventoryList(items);
-    });
-
-    const unsubscribeAnalytics = onSnapshot(query(collection(db, 'food_analytics')), (snap) => {
-        const stats = snap.docs.map(doc => ({
-            name: doc.id,
-            liked: doc.data().liked || 0,
-            disliked: doc.data().disliked || 0
-        }));
-        setFoodAnalyticsData(stats);
-    });
-
-    const unsubscribeSurvey = onSnapshot(query(collection(db, 'monthly_surveys'), where('status', 'in', ['active', 'ended'])), (snap) => {
-        if (!snap.empty) {
-            const survey = { id: snap.docs[0].id, ...snap.docs[0].data() };
-            setActiveSurvey(survey);
-
-            // Listen for all votes to this survey
-            const votesRef = collection(db, 'monthly_surveys', survey.id, 'votes');
-            onSnapshot(query(votesRef), (vSnap) => {
-                const tallies: any = {};
-                vSnap.forEach(doc => {
-                    const selections = doc.data().selections;
-                    Object.entries(selections).forEach(([slot, choice]) => {
-                        if (!tallies[slot]) tallies[slot] = {};
-                        tallies[slot][choice as string] = (tallies[slot][choice as string] || 0) + 1;
-                    });
+            if (role === 'staff' || role === 'admin') {
+                const unsubscribeMenu = onSnapshot(doc(db, 'mess_menu', 'weekly'), (docSnap) => {
+                    if (docSnap.exists()) {
+                        const data = docSnap.data();
+                        if (data && data[todayName]) {
+                            const todays = data[todayName];
+                            setFormMenu({
+                                breakfast: todays.breakfast ? todays.breakfast.join(', ') : '',
+                                lunch: todays.lunch ? todays.lunch.join(', ') : '',
+                                snacks: todays.snacks ? todays.snacks.join(', ') : '',
+                                dinner: todays.dinner ? todays.dinner.join(', ') : '',
+                            });
+                        }
+                    }
+                    
+                    // Override with today's specific emergency menu if it exists
+                    unsubs.push(onSnapshot(doc(db, 'daily_overrides', todayDate), (overrideSnap) => {
+                        if (overrideSnap.exists()) {
+                            const data = overrideSnap.data();
+                            setFormMenu({
+                                breakfast: data.breakfast || '',
+                                lunch: data.lunch || '',
+                                snacks: data.snacks || '',
+                                dinner: data.dinner || '',
+                            });
+                        }
+                    }));
+                    setLoading(false);
+                }, (error) => {
+                    console.error("Error fetching menu:", error);
+                    setLoading(false);
                 });
+                unsubs.push(unsubscribeMenu);
 
-                // Format for chart: Top trending slots
-                const chartData = Object.entries(tallies).map(([slot, choices]: any) => {
-                    const options = Object.keys(choices);
-                    return {
-                        name: slot.split('-')[0].charAt(0).toUpperCase() + slot.split('-')[1].charAt(0),
-                        [options[0] || 'A']: choices[options[0]] || 0,
-                        [options[1] || 'B']: choices[options[1]] || 0,
-                    };
-                }).slice(0, 7); // Show sample of 7 slots
-                setSurveyStats(chartData);
-            });
-        } else {
-            setActiveSurvey(null);
-            setSurveyStats([]);
+                unsubs.push(onSnapshot(doc(db, 'mess_menu', 'pdfContent'), (docSnap) => {
+                    if (docSnap.exists() && docSnap.data().url) setPdfUrl(docSnap.data().url);
+                }));
+
+                unsubs.push(onSnapshot(query(collection(db, 'inventory')), (snap) => {
+                    setInventoryList(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                }));
+
+                unsubs.push(onSnapshot(query(collection(db, 'food_analytics')), (snap) => {
+                    setFoodAnalyticsData(snap.docs.map(doc => ({
+                        name: doc.id,
+                        liked: doc.data().liked || 0,
+                        disliked: doc.data().disliked || 0
+                    })));
+                }));
+
+                unsubs.push(onSnapshot(query(collection(db, 'monthly_surveys'), where('status', 'in', ['active', 'ended'])), (snap) => {
+                    if (!snap.empty) {
+                        const survey = { id: snap.docs[0].id, ...snap.docs[0].data() };
+                        setActiveSurvey(survey);
+                        const votesRef = collection(db, 'monthly_surveys', survey.id, 'votes');
+                        unsubs.push(onSnapshot(query(votesRef), (vSnap) => {
+                            const tallies: any = {};
+                            vSnap.forEach(doc => {
+                                Object.entries(doc.data().selections).forEach(([slot, choice]) => {
+                                    if (!tallies[slot]) tallies[slot] = {};
+                                    tallies[slot][choice as string] = (tallies[slot][choice as string] || 0) + 1;
+                                });
+                            });
+                            setSurveyStats(Object.entries(tallies).map(([slot, choices]: any) => {
+                                const options = Object.keys(choices);
+                                return {
+                                    name: slot.split('-')[0].charAt(0).toUpperCase() + slot.split('-')[1].charAt(0),
+                                    [options[0] || 'A']: choices[options[0]] || 0,
+                                    [options[1] || 'B']: choices[options[1]] || 0,
+                                };
+                            }).slice(0, 7));
+                        }));
+                    } else {
+                        setActiveSurvey(null);
+                        setSurveyStats([]);
+                    }
+                }));
+            }
+        } catch (e) {
+            console.error("Auth gate error:", e);
         }
-    });
-
-    return () => {
-      unsubscribeMenu();
-      unsubscribePdf();
-      unsubscribeInventory();
-      unsubscribeAnalytics();
-      unsubscribeSurvey();
     };
-  }, [todayName]);
+
+    setupSubscriptions();
+    return () => unsubs.forEach(unsub => unsub());
+  }, [user, todayName]);
 
   const handleSurveyOptionChange = (day: string, meal: string, index: number, value: string) => {
     setSurveyForm((prev: any) => {

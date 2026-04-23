@@ -46,19 +46,32 @@ export default function WardenDashboard() {
   };
 
   useEffect(() => {
-    // Analytics Listener
-    const unsubscribeAnalytics = onSnapshot(query(collection(db, 'food_analytics')), (snap) => {
-        const stats = snap.docs.map(doc => ({
-            dish: doc.data().dish,
-            likes: doc.data().likes || 0,
-            dislikes: doc.data().dislikes || 0
-        }));
-        setFoodAnalyticsData(stats);
-        setLoading(false);
-    });
+    if (!user) return;
+    
+    // Only run listeners if user has a valid warden or admin role
+    const checkAndSubscribe = async () => {
+        const userDoc = await getDoc(doc(db, 'users', user.email!));
+        const role = userDoc.exists() ? userDoc.data()?.role : 'student';
+        
+        if (role === 'warden' || role === 'admin') {
+            const unsubscribeAnalytics = onSnapshot(query(collection(db, 'food_analytics')), (snap) => {
+                const stats = snap.docs.map(doc => ({
+                    dish: doc.data().dish,
+                    likes: doc.data().likes || 0,
+                    dislikes: doc.data().dislikes || 0
+                }));
+                setFoodAnalyticsData(stats);
+                setLoading(false);
+            });
+            return unsubscribeAnalytics;
+        }
+    };
 
-    return () => unsubscribeAnalytics();
-  }, []);
+    let unsubscribe: any;
+    checkAndSubscribe().then(unsub => unsubscribe = unsub);
+    
+    return () => unsubscribe && unsubscribe();
+  }, [user]);
 
   return (
     <ProtectedRoute allowedRoles={['warden', 'admin']}>
