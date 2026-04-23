@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { setDoc } from 'firebase/firestore';
+import { setDoc, deleteDoc } from 'firebase/firestore';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
@@ -138,6 +138,32 @@ export default function MessDashboard() {
     }
   };
 
+  const handleReset = async () => {
+    if (!confirm('Are you sure you want to delete today\'s emergency menu and revert to the regular weekly menu?')) {
+        return;
+    }
+
+    setIsUpdating(true);
+    try {
+        const todayDate = new Date().toISOString().split('T')[0];
+        await deleteDoc(doc(db, 'daily_overrides', todayDate));
+        
+        toast({
+            title: 'Menu Reset!',
+            description: 'Today\'s emergency override has been removed. Reverting to weekly menu.',
+        });
+    } catch (error) {
+        console.error("Error resetting menu:", error);
+        toast({
+            title: 'Reset Failed',
+            description: 'Could not revert to weekly menu.',
+            variant: 'destructive'
+        });
+    } finally {
+        setIsUpdating(false);
+    }
+  };
+
   const handleInputChange = (field: string, value: string) => {
     setFormMenu(prev => ({ ...prev, [field]: value }));
   };
@@ -252,14 +278,25 @@ export default function MessDashboard() {
                           rows={2}
                         />
                       </div>
-                      <Button 
-                        type="submit" 
-                        disabled={isUpdating}
-                        className="w-full bg-yellow-500 hover:bg-yellow-600 text-black flex items-center justify-center gap-2"
-                      >
-                        {isUpdating && <div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin"></div>}
-                        {isUpdating ? 'Updating...' : 'Update Live Menu'}
-                      </Button>
+                      <div className="flex flex-col gap-3">
+                        <Button 
+                            type="submit" 
+                            disabled={isUpdating}
+                            className="w-full bg-yellow-500 hover:bg-yellow-600 text-black flex items-center justify-center gap-2"
+                        >
+                            {isUpdating && <div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin"></div>}
+                            {isUpdating ? 'Updating...' : 'Update Live Menu'}
+                        </Button>
+                        <Button 
+                            type="button" 
+                            variant="outline"
+                            onClick={handleReset}
+                            className="w-full border-zinc-200 hover:bg-zinc-50 text-zinc-500 font-medium"
+                            disabled={isUpdating}
+                        >
+                            Reset to Regular Menu
+                        </Button>
+                      </div>
                     </div>
                   </form>
                 )}
