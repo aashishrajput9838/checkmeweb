@@ -1,10 +1,60 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // ULTIMATE DEBUGGING RULE - OPEN FOR ALL
-    // WARNING: DO NOT KEEP THIS FOR PRODUCTION
+    
+    // Check if user is logged in
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Allow any authenticated user to read all data 
+    // This prevents "permission-denied" errors for logged-in students/staff
     match /{document=**} {
-      allow read, write: if true;
+      allow read: if isAuthenticated();
+    }
+
+    // --- WRITE RULES ---
+
+    // Users can write to their own profile and history
+    match /users/{userId} {
+      allow write: if isAuthenticated() && request.auth.token.email == userId;
+      
+      match /attendance_history/{docId} {
+        allow write: if isAuthenticated(); // Allow wardens to write to student history
+      }
+    }
+
+    // Restrict writes for administrative collections
+    match /notices/{document} {
+      allow write: if isAuthenticated(); // Tighten this later with role checks
+    }
+    
+    match /mess_menu/{document} {
+      allow write: if isAuthenticated(); 
+    }
+    
+    match /daily_overrides/{date} {
+      allow write: if isAuthenticated();
+    }
+    
+    match /monthly_surveys/{surveyId} {
+      allow write: if isAuthenticated();
+      
+      match /votes/{userId} {
+        allow write: if isAuthenticated() && request.auth.token.email == userId;
+      }
+    }
+    
+    match /inventory/{itemId} {
+      allow write: if isAuthenticated();
+    }
+    
+    match /attendance/{date} {
+      allow write: if isAuthenticated();
+    }
+    
+    match /food_analytics/{document} {
+      allow write: if isAuthenticated();
     }
   }
 }
