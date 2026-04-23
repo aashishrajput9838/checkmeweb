@@ -1,6 +1,6 @@
 'use client'
 
-import { Utensils, CalendarCheck, Vote, ShieldCheck, ChevronRight, Star, ArrowRight, Zap, Layers } from 'lucide-react'
+import { Utensils, CalendarCheck, Vote, ShieldCheck, ChevronRight, Star, ArrowRight, Zap, Layers, Linkedin, Github } from 'lucide-react'
 import Link from 'next/link'
 import { GoogleSignIn } from '@/components/google-signin'
 import { useEffect, useState } from 'react'
@@ -163,6 +163,59 @@ export default function Page() {
             <div>
               <p className="text-4xl font-black text-yellow-500 mb-2">Zero</p>
               <p className="text-zinc-500 text-xs font-bold uppercase tracking-widest">Paper Waste</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Founder Section */}
+      <section className="py-24 px-6 relative overflow-hidden">
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-yellow-500/5 rounded-full blur-[150px] pointer-events-none"></div>
+        <div className="max-w-5xl mx-auto bg-zinc-900/50 border border-white/5 rounded-[3rem] p-8 md:p-16 backdrop-blur-xl relative z-10">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
+            <div className="relative">
+              <div className="aspect-square rounded-[2rem] overflow-hidden border-4 border-yellow-500/20 shadow-2xl">
+                <img 
+                  src="https://github.com/aashishrajput9838.png" 
+                  alt="Aashish Rajput" 
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                />
+              </div>
+              <div className="absolute -bottom-6 -right-6 bg-yellow-500 text-black p-6 rounded-2xl shadow-xl">
+                <p className="text-sm font-black uppercase tracking-widest leading-none mb-1">Founded By</p>
+                <p className="text-xl font-black italic">Aashish Rajput</p>
+              </div>
+            </div>
+            
+            <div className="space-y-6">
+              <div className="inline-block px-4 py-1.5 bg-yellow-500/10 border border-yellow-500/20 rounded-full text-yellow-500 text-[10px] font-black uppercase tracking-widest">
+                The Architect
+              </div>
+              <h2 className="text-4xl font-black tracking-tight leading-tight">
+                "TURNING IDEAS INTO <br />
+                <span className="text-yellow-500 italic">MEANINGFUL CODE.</span>"
+              </h2>
+              <p className="text-zinc-400 font-medium leading-relaxed italic">
+                "UI obsessed and logic driven. I write clean code like poetry, with purpose and precision. CheckMe was born from the need to solve real-world campus problems with elegant engineering."
+              </p>
+              <div className="pt-6 flex items-center gap-6">
+                <a 
+                  href="https://aspirinexar.vercel.app/" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="px-8 h-14 bg-white text-black rounded-2xl flex items-center justify-center font-black hover:bg-yellow-500 transition-all shadow-xl"
+                >
+                  View Portfolio
+                </a>
+                <div className="flex gap-4">
+                  <a href="https://linkedin.com/in/aashishrajput9838" target="_blank" rel="noopener noreferrer" className="p-3 bg-white/5 rounded-xl text-zinc-400 hover:text-white transition-all">
+                    <Linkedin size={20} />
+                  </a>
+                  <a href="https://github.com/aashishrajput9838" target="_blank" rel="noopener noreferrer" className="p-3 bg-white/5 rounded-xl text-zinc-400 hover:text-white transition-all">
+                    <Github size={20} />
+                  </a>
+                </div>
+              </div>
             </div>
           </div>
         </div>
