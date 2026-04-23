@@ -1,26 +1,25 @@
 'use client'
 
-import { Home, Library, Plus, ClipboardList, User, Volume2, Edit2, Circle, Users, UserCheck, Utensils } from 'lucide-react'
+import { Utensils, CalendarCheck, Vote, ShieldCheck, ChevronRight, Star, ArrowRight, Zap, Layers } from 'lucide-react'
 import Link from 'next/link'
-import { ProtectedRoute } from '@/components/protected-route'
 import { GoogleSignIn } from '@/components/google-signin'
-import { UserAvatar } from '@/components/user-avatar'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/AuthContext'
 import { db } from '@/lib/firebase'
 import { doc, getDoc } from 'firebase/firestore'
+import { Footer } from '@/components/landing/Footer'
 
 export default function Page() {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
   const router = useRouter();
-  
-  const isStudent = user?.email?.includes('@ug.sharda.ac.in');
+  const [isRedirecting, setIsRedirecting] = useState(false);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || loading) return;
 
     const checkRoleAndRedirect = async () => {
+      setIsRedirecting(true);
       try {
         const userDoc = await getDoc(doc(db, 'users', user.email!));
         const role = userDoc.exists() ? userDoc.data()?.role : 'student';
@@ -28,205 +27,166 @@ export default function Page() {
         if (role === 'admin') router.push('/dashboard/admin');
         else if (role === 'warden') router.push('/dashboard/warden');
         else if (role === 'staff') router.push('/dashboard/mess');
-        else if (role === 'representative' || role === 'student') {
-            // Only redirect if they are on the root path
-            if (window.location.pathname === '/') router.push('/dashboard/student');
-        }
+        else router.push('/dashboard/student');
       } catch (error) {
         console.error("Redirection error:", error);
+        setIsRedirecting(false);
       }
     };
 
     checkRoleAndRedirect();
-  }, [user, router]);
+  }, [user, loading, router]);
 
-  if (user?.email === 'admin@checkme.com') return null;
+  if (loading || isRedirecting) {
+    return (
+      <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center">
+        <div className="w-16 h-16 border-4 border-yellow-500 border-t-transparent rounded-full animate-spin"></div>
+        <p className="mt-6 text-zinc-400 font-medium animate-pulse">Entering the hub...</p>
+      </div>
+    );
+  }
 
   return (
-    <ProtectedRoute>
-      <div className="min-h-screen bg-yellow-300 flex items-center justify-center p-6">
-        {/* Main Container */}
-        <div className="relative w-full max-w-6xl bg-black rounded-3xl overflow-hidden shadow-2xl">
-
-          {/* Geometric Background Shapes */}
-          <div className="absolute inset-0 overflow-hidden pointer-events-none">
-            {/* Orange shape - left */}
-            <div className="absolute left-0 top-1/4 w-64 h-96 bg-orange-500 rounded-full blur-3xl opacity-60"></div>
-
-            {/* Yellow geometric shapes */}
-            <svg className="absolute inset-0 w-full h-full" preserveAspectRatio="none" viewBox="0 0 1200 900">
-              {/* Yellow triangles and shapes */}
-              <polygon points="200,100 500,200 300,400" fill="#FFFF00" opacity="0.3" />
-              <polygon points="700,100 1000,150 900,350" fill="#FFFF00" opacity="0.25" />
-              <polygon points="150,500 400,600 250,800" fill="#FF6B00" opacity="0.2" />
-              <polygon points="800,400 1100,450 1000,700" fill="#CCFF00" opacity="0.3" />
-            </svg>
+    <div className="min-h-screen bg-zinc-950 text-white selection:bg-yellow-500/30">
+      {/* Navigation */}
+      <nav className="fixed top-0 w-full z-50 bg-zinc-950/80 backdrop-blur-xl border-b border-white/5">
+        <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-yellow-500 rounded-xl flex items-center justify-center text-black font-black text-lg shadow-[0_0_20px_rgba(234,179,8,0.3)]">
+              CM
+            </div>
+            <span className="text-2xl font-black tracking-tight uppercase italic">CheckMe</span>
+          </div>
+          
+          <div className="hidden md:flex items-center gap-8 text-sm font-bold uppercase tracking-widest text-zinc-400">
+            <a href="#features" className="hover:text-yellow-500 transition-colors">Features</a>
+            <a href="#how-it-works" className="hover:text-yellow-500 transition-colors">Process</a>
+            <a href="#impact" className="hover:text-yellow-500 transition-colors">Impact</a>
           </div>
 
-          {/* Content */}
-          <div className="relative z-10 p-8">
+          <div className="flex items-center gap-4">
+            <GoogleSignIn />
+          </div>
+        </div>
+      </nav>
 
-            {/* Header */}
-            <div className="flex items-center justify-between mb-12">
-              {/* Logo */}
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-gradient-to-br from-red-500 via-yellow-500 to-green-500 rounded-lg flex items-center justify-center text-white font-bold text-sm">
-                  CM
-                </div>
-                <span className="text-white text-2xl font-bold">CheckMe</span>
-              </div>
+      {/* Hero Section */}
+      <section className="relative pt-40 pb-24 px-6 overflow-hidden">
+        {/* Background Gradients */}
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-6xl h-full pointer-events-none">
+          <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-yellow-500/10 rounded-full blur-[120px] animate-pulse"></div>
+          <div className="absolute bottom-0 left-0 w-[500px] h-[500px] bg-orange-500/5 rounded-full blur-[120px] animate-pulse [animation-delay:2s]"></div>
+        </div>
 
-              {/* Center Navigation */}
-              <div className="flex gap-3">
-                <button className="px-6 py-2 bg-white text-black font-semibold rounded-full hover:bg-gray-100 transition">
-                  Dashboard
-                </button>
-                <button className="px-6 py-2 bg-gray-700 text-white font-semibold rounded-full hover:bg-gray-600 transition">
-                  My Status
-                </button>
-              </div>
+        <div className="max-w-7xl mx-auto relative z-10 text-center">
+          <div className="inline-flex items-center gap-2 bg-yellow-500/10 border border-yellow-500/20 px-4 py-2 rounded-full text-yellow-500 text-xs font-black uppercase tracking-[0.2em] mb-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+            <Zap size={14} className="fill-yellow-500" /> 
+            Revolutionizing Hostel Life
+          </div>
+          
+          <h1 className="text-6xl md:text-8xl font-black tracking-tighter mb-8 leading-[0.9] animate-in fade-in slide-in-from-bottom-8 duration-1000">
+            YOUR MESS, <br />
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 via-yellow-200 to-orange-500">SMARTER.</span>
+          </h1>
+          
+          <p className="max-w-2xl mx-auto text-xl text-zinc-400 font-medium leading-relaxed mb-12 animate-in fade-in slide-in-from-bottom-12 duration-1000">
+            Digitizing Sharda University's Mess Ecosystem. Live Menus, Real-time Attendance, and Democratic Meal Selection — all in one premium hub.
+          </p>
 
-              {/* Full Power & Auth */}
-              <div className="flex items-center gap-4 text-white">
-                <div className="flex items-center gap-2">
-                  <Volume2 size={24} />
-                  <span className="font-semibold">Full Access</span>
-                </div>
-                <GoogleSignIn />
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-6 animate-in fade-in slide-in-from-bottom-16 duration-1000">
+            <GoogleSignIn />
+            <button className="flex items-center gap-2 text-zinc-400 hover:text-white font-bold transition-all group">
+              Explore the Features <ArrowRight className="group-hover:translate-x-1 transition-transform" />
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* Feature Cards */}
+      <section id="features" className="py-24 px-6 relative">
+        <div className="max-w-7xl mx-auto">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            
+            <div className="group bg-white/[0.03] border border-white/5 p-8 rounded-[2.5rem] hover:bg-white/[0.05] hover:border-yellow-500/30 transition-all duration-500 relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-yellow-500/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 group-hover:bg-yellow-500/20 transition-all"></div>
+              <div className="w-16 h-16 bg-yellow-500 rounded-2xl flex items-center justify-center text-black mb-8 group-hover:scale-110 transition-transform shadow-lg shadow-yellow-500/20">
+                <Utensils size={32} />
               </div>
+              <h3 className="text-2xl font-black mb-4">Digital Menu Hub</h3>
+              <p className="text-zinc-400 leading-relaxed font-medium">
+                No more paper menus. View live, weekly schedules with smart parsing technology. AI-powered OCR keeps the menu updated in seconds.
+              </p>
             </div>
 
-            {/* Main Grid */}
-            <div className="grid grid-cols-4 gap-6 mb-8">
-
-              {/* Get Started Card - Large */}
-              <Link href="/dashboard/student" className="col-span-1 bg-white rounded-2xl p-6 flex flex-col justify-between h-80 relative hover:shadow-lg transition-shadow cursor-pointer">
-                <div>
-                  <h2 className="text-4xl font-bold text-black mb-2">Getting Started</h2>
-                  <p className="text-gray-600 text-sm">View menus and manage attendance</p>
-                </div>
-
-                {/* Stylus Image Placeholder */}
-                <div className="relative h-40 bg-gradient-to-b from-gray-50 to-gray-100 rounded-lg flex items-center justify-center">
-                  <div className="text-center">
-                    <svg className="w-24 h-24 mx-auto" viewBox="0 0 100 150" fill="none">
-                      {/* Hand holding stylus - simple representation */}
-                      <path d="M 30 80 Q 25 100 35 130 M 30 80 L 50 30 L 52 20 M 50 30 Q 45 35 40 40" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-                      <path d="M 52 20 Q 60 25 65 35 M 52 20 L 48 15" stroke="#7C3AED" strokeWidth="3" strokeLinecap="round" />
-                    </svg>
-                  </div>
-                </div>
-
-                {/* D Badge */}
-                <UserAvatar />
-              </Link>
-
-              {/* Tutorial Cards - Middle Column */}
-              <div className="col-span-1 flex flex-col gap-6">
-
-                {/* Student Dashboard */}
-                <Link href="/dashboard/student" className="bg-white border-4 border-yellow-400 rounded-2xl p-5 relative h-48 hover:shadow-lg transition-shadow">
-                  <div className="flex items-center justify-between mb-2">
-                    <div>
-                      <p className="text-xs text-gray-500 font-semibold">Student</p>
-                      <h3 className="text-lg font-bold text-black">Student Dashboard</h3>
-                    </div>
-                    <div className="w-8 h-8 bg-gray-700 rounded-full flex items-center justify-center text-white">
-                      <Users size={16} />
-                    </div>
-                  </div>
-                  <div className="flex justify-center items-center h-32">
-                    <div className="text-5xl">🎓</div>
-                  </div>
-                </Link>
-
-                {/* Warden Dashboard */}
-                {!isStudent && (
-                  <Link href="/dashboard/warden" className="bg-white border-4 border-yellow-400 rounded-2xl p-5 relative h-48 hover:shadow-lg transition-shadow">
-                    <div className="flex items-center justify-between mb-2">
-                      <div>
-                        <p className="text-xs text-gray-500 font-semibold">Warden</p>
-                        <h3 className="text-lg font-bold text-black">Warden Dashboard</h3>
-                      </div>
-                      <div className="w-8 h-8 bg-gray-700 rounded-full flex items-center justify-center text-white">
-                        <UserCheck size={16} />
-                      </div>
-                    </div>
-                    <div className="flex justify-center items-center h-32">
-                      <div className="text-5xl">📋</div>
-                    </div>
-                  </Link>
-                )}
+            <div className="group bg-white/[0.03] border border-white/5 p-8 rounded-[2.5rem] hover:bg-white/[0.05] hover:border-blue-500/30 transition-all duration-500 relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 group-hover:bg-blue-500/20 transition-all"></div>
+              <div className="w-16 h-16 bg-blue-500 rounded-2xl flex items-center justify-center text-white mb-8 group-hover:scale-110 transition-transform shadow-lg shadow-blue-500/20">
+                <CalendarCheck size={32} />
               </div>
-
-              {/* Project Cards - Right Columns */}
-              <div className="col-span-2 grid grid-cols-2 gap-6">
-
-                {/* Smart Analytics */}
-                <Link href="/dashboard/student" className="bg-gray-900 rounded-2xl p-6 text-white flex flex-col justify-between h-80 hover:shadow-lg transition-shadow">
-                  <div>
-                    <p className="text-xs text-gray-400 mb-1">Students Feature</p>
-                    <h3 className="text-2xl font-bold">Vote & Analytics</h3>
-                  </div>
-                  <div className="flex justify-center items-center h-40">
-                    <div className="text-7xl">📊</div>
-                  </div>
-                  <div className="absolute top-6 right-6 w-8 h-8 bg-gray-700 rounded-full flex items-center justify-center text-white hover:bg-gray-600">
-                    <Edit2 size={18} />
-                  </div>
-                </Link>
-
-                {/* Mess Dashboard */}
-                {!isStudent && (
-                  <Link href="/dashboard/mess" className="bg-gray-900 rounded-2xl p-6 text-white flex flex-col justify-between h-80 hover:shadow-lg transition-shadow">
-                    <div>
-                      <p className="text-xs text-gray-400 mb-1">Mess Staff</p>
-                      <h3 className="text-2xl font-bold">Mess Dashboard</h3>
-                    </div>
-                    <div className="flex justify-center items-center h-40">
-                      <div className="text-7xl">🍳</div>
-                    </div>
-                    <div className="absolute top-6 right-6 w-8 h-8 bg-gray-700 rounded-full flex items-center justify-center text-white hover:bg-gray-600">
-                      <Utensils size={18} />
-                    </div>
-                  </Link>
-                )}
-              </div>
+              <h3 className="text-2xl font-black mb-4">Smart Attendance</h3>
+              <p className="text-zinc-400 leading-relaxed font-medium">
+                Wardens track attendance effortlessly. Students view their history. Data-driven insights help mess staff minimize food waste.
+              </p>
             </div>
 
-            {/* Carousel Dots */}
-            <div className="flex justify-center gap-2 mb-8">
-              <div className="w-2 h-2 bg-gray-500 rounded-full"></div>
-              <div className="w-2 h-2 bg-gray-500 rounded-full"></div>
-              <div className="w-3 h-3 bg-white rounded-full"></div>
-              <div className="w-2 h-2 bg-gray-500 rounded-full"></div>
+            <div className="group bg-white/[0.03] border border-white/5 p-8 rounded-[2.5rem] hover:bg-white/[0.05] hover:border-orange-500/30 transition-all duration-500 relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-orange-500/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 group-hover:bg-orange-500/20 transition-all"></div>
+              <div className="w-16 h-16 bg-orange-500 rounded-2xl flex items-center justify-center text-white mb-8 group-hover:scale-110 transition-transform shadow-lg shadow-orange-500/20">
+                <Vote size={32} />
+              </div>
+              <h3 className="text-2xl font-black mb-4">Democratic Voting</h3>
+              <p className="text-zinc-400 leading-relaxed font-medium">
+                Your plate, your voice. Cast monthly votes for Sunday specials and rate every meal to shape the future of hostel dining.
+              </p>
             </div>
 
-            {/* Bottom Navigation */}
-            <div className="flex items-center justify-center gap-8 bg-gray-950 rounded-full py-4 px-8 mx-auto w-fit">
-              <button className="flex flex-col items-center gap-1 text-gray-400 hover:text-white transition">
-                <Home size={24} />
-                <span className="text-xs">Home</span>
-              </button>
-              <button className="flex flex-col items-center gap-1 text-gray-400 hover:text-white transition">
-                <Library size={24} />
-                <span className="text-xs">Menu</span>
-              </button>
-              <button className="w-12 h-12 bg-white rounded-full flex items-center justify-center text-black hover:bg-gray-200 transition shadow-lg">
-                <Plus size={28} />
-              </button>
-              <button className="flex flex-col items-center gap-1 text-gray-400 hover:text-white transition">
-                <ClipboardList size={24} />
-                <span className="text-xs">Reports</span>
-              </button>
-              <button className="flex flex-col items-center gap-1 text-gray-400 hover:text-white transition">
-                <User size={24} />
-                <span className="text-xs">Profile</span>
-              </button>
+          </div>
+        </div>
+      </section>
+
+      {/* Trust Banner */}
+      <section id="impact" className="py-24 bg-white/[0.02] border-y border-white/5 overflow-hidden">
+        <div className="max-w-7xl mx-auto px-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-12 text-center">
+            <div>
+              <p className="text-4xl font-black text-yellow-500 mb-2">2500+</p>
+              <p className="text-zinc-500 text-xs font-bold uppercase tracking-widest">Active Students</p>
+            </div>
+            <div>
+              <p className="text-4xl font-black text-yellow-500 mb-2">98%</p>
+              <p className="text-zinc-500 text-xs font-bold uppercase tracking-widest">Feedback Rate</p>
+            </div>
+            <div>
+              <p className="text-4xl font-black text-yellow-500 mb-2">15+</p>
+              <p className="text-zinc-500 text-xs font-bold uppercase tracking-widest">Daily Menus</p>
+            </div>
+            <div>
+              <p className="text-4xl font-black text-yellow-500 mb-2">Zero</p>
+              <p className="text-zinc-500 text-xs font-bold uppercase tracking-widest">Paper Waste</p>
             </div>
           </div>
         </div>
-      </div>
-    </ProtectedRoute>
+      </section>
+
+      {/* CTA Section */}
+      <section className="py-32 px-6">
+        <div className="max-w-5xl mx-auto bg-gradient-to-br from-yellow-500 to-orange-600 rounded-[3rem] p-12 md:p-24 text-center relative overflow-hidden shadow-2xl">
+          <div className="absolute inset-0 bg-black/10 opacity-50 backdrop-blur-sm"></div>
+          <div className="relative z-10">
+            <h2 className="text-4xl md:text-6xl font-black text-black mb-8 leading-tight">
+              READY TO <br />UPGRADE YOUR LIFE?
+            </h2>
+            <div className="flex justify-center">
+              <GoogleSignIn />
+            </div>
+            <p className="mt-8 text-black/60 font-bold uppercase tracking-widest text-xs">
+              Exclusive for Sharda University Students & Staff
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <Footer />
+    </div>
   )
 }

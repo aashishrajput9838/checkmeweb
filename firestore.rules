@@ -3,17 +3,27 @@ service cloud.firestore {
   match /databases/{database}/documents {
     // Helper to check if user is admin
     function isAdmin() {
-      return get(/databases/$(database)/documents/users/$(request.auth.token.email)).data.role == 'admin';
+      return request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.token.email)).data.role == 'admin';
     }
     
     // Helper to check if user has specific role
     function hasRole(role) {
-      return get(/databases/$(database)/documents/users/$(request.auth.token.email)).data.role == role;
+      return request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.token.email)).data.role == role;
     }
 
     match /users/{userId} {
       allow read: if request.auth != null;
-      allow write: if isAdmin() || (request.auth.token.email == userId);
+      allow write: if isAdmin() || (request.auth != null && request.auth.token.email == userId);
+      
+      match /attendance_history/{docId} {
+        allow read: if request.auth != null && (request.auth.token.email == userId || isAdmin() || hasRole('warden'));
+        allow write: if isAdmin() || hasRole('warden');
+      }
+    }
+    
+    match /notices/{document} {
+      allow read: if true;
+      allow write: if isAdmin() || hasRole('warden');
     }
     
     match /mess_menu/{document} {
@@ -31,7 +41,7 @@ service cloud.firestore {
       allow write: if hasRole('staff') || isAdmin();
       
       match /votes/{userId} {
-        allow read: if request.auth != null && (request.auth.token.email == userId || isAdmin());
+        allow read: if request.auth != null && (request.auth.token.email == userId || isAdmin() || hasRole('staff'));
         allow write: if request.auth != null && request.auth.token.email == userId;
       }
     }
@@ -44,6 +54,11 @@ service cloud.firestore {
     match /attendance/{date} {
       allow read: if request.auth != null;
       allow write: if hasRole('warden') || isAdmin();
+    }
+    
+    match /food_analytics/{document} {
+      allow read: if request.auth != null;
+      allow write: if hasRole('staff') || isAdmin() || hasRole('warden');
     }
   }
 }
