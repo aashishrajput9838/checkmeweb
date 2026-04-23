@@ -1,13 +1,14 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import UserAvatar from '@/components/user-avatar';
+import { useSearchParams } from 'next/navigation';
+import { UserAvatar } from '@/components/user-avatar';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { CalendarDays, Utensils, Vote } from 'lucide-react';
+import { CalendarDays, Utensils, Vote, Clock } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { MenuCard } from '@/components/modules/MenuCard';
 import { AttendanceTable } from '@/components/modules/AttendanceTable';
@@ -38,6 +39,8 @@ const daysOfWeek = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'fri
 export default function StudentDashboard() {
   const { toast } = useToast();
   const { user } = useAuth();
+  const searchParams = useSearchParams();
+  const currentTab = searchParams.get('tab') || 'overview';
   const [todaysMenu, setTodaysMenu] = useState({
     breakfast: [],
     lunch: [],
@@ -45,6 +48,7 @@ export default function StudentDashboard() {
     dinner: []
   });
   const [weeklyMenu, setWeeklyMenu] = useState<any>(null);
+  const [timings, setTimings] = useState<any>(null);
   const [loadingMenu, setLoadingMenu] = useState(true);
   const [isRep, setIsRep] = useState(false);
   const [file, setFile] = useState<File | null>(null);
@@ -57,19 +61,44 @@ export default function StudentDashboard() {
   const [isSavingParsed, setIsSavingParsed] = useState(false);
 
   useEffect(() => {
-    // 1. Fetch current day's text menu
+    // 1. Fetch local fallback data (xlsx)
     const today = new Date().getDay();
     const dayName = daysOfWeek[today]; // 0 is sunday, 1 is monday, etc.
 
+    let localMenu: any = null;
+
+    fetch('/api/mess/data')
+      .then(res => res.json())
+      .then(data => {
+        if (!data.error) {
+           setTimings(data.timing);
+           localMenu = data.menu;
+           // Initialize if weeklyMenu is currently null
+           setWeeklyMenu((prev: any) => {
+             if (!prev) {
+               setTodaysMenu(data.menu[dayName] || { breakfast: [], lunch: [], snacks: [], dinner: [] });
+               return data.menu;
+             }
+             return prev;
+           });
+           setLoadingMenu(false);
+        }
+      })
+      .catch(console.error);
+
+    // 2. Fetch current day's text menu from Firebase (Overrides local if exists)
     const unsubscribeMenu = onSnapshot(doc(db, 'mess_menu', 'weekly'), (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
-        if (data) {
+        if (data && Object.keys(data).length > 2) {
           setWeeklyMenu(data);
           if (data[dayName]) {
             setTodaysMenu(data[dayName]);
           }
         }
+      } else if (localMenu) {
+         setWeeklyMenu(localMenu);
+         setTodaysMenu(localMenu[dayName] || { breakfast: [], lunch: [], snacks: [], dinner: [] });
       }
       setLoadingMenu(false);
     }, (error) => {
@@ -77,7 +106,7 @@ export default function StudentDashboard() {
       setLoadingMenu(false);
     });
 
-    // 2. Listen to PDF URL
+    // 3. Listen to PDF URL
     const unsubscribePdf = onSnapshot(doc(db, 'mess_menu', 'pdfContent'), (docSnap) => {
       if (docSnap.exists() && docSnap.data().url) {
         setPdfUrl(docSnap.data().url);
@@ -217,6 +246,54 @@ export default function StudentDashboard() {
     });
   };
 
+  const getActiveMeal = () => {
+    if (!timings) return null;
+    
+    // Simple parser for "8:00 PM to 10:00 PM"
+    const parseTime = (timeStr: string) => {
+        if (!timeStr) return null;
+        const [start, end] = timeStr.split(' to ');
+        const parseSingle = (s: string) => {
+            const match = s.match(/(\d+):(\d+)\s*(AM|PM)/i);
+            if (!match) return 0;
+            let [_, h, m, p] = match;
+            let hour = parseInt(h);
+            if (p.toUpperCase() === 'PM' && hour !== 12) hour += 12;
+            if (p.toUpperCase() === 'AM' && hour === 12) hour = 0;
+            return hour * 60 + parseInt(m);
+        };
+        return { start: parseSingle(start), end: parseSingle(end) };
+    };
+
+    const now = new Date();
+    const currentMins = now.getHours() * 60 + now.getMinutes();
+
+    const order = ['breakfast', 'lunch', 'snacks', 'dinner'] as const;
+    
+    // 1. Check if we are currently inside a meal window
+    for (const meal of order) {
+        const time = parseTime(timings[meal]);
+        if (!time) continue;
+        if (currentMins >= time.start && currentMins <= time.end) {
+            return { meal, status: 'LIVE NOW', items: todaysMenu[meal] || [] };
+        }
+    }
+
+    // 2. Otherwise find the NEXT upcoming meal
+    for (const meal of order) {
+        const time = parseTime(timings[meal]);
+        if (!time) continue;
+        if (currentMins < time.start) {
+            return { meal, status: 'UPCOMING', items: todaysMenu[meal] || [] };
+        }
+    }
+
+    // 3. If after dinner, show tomorrow's breakfast (from weekly) or just say finished
+    return { meal: 'breakfast', status: 'TOMORROW', items: todaysMenu['breakfast'] || [] };
+  };
+
+  const activeMealInfo = getActiveMeal();
+
   return (
       <div className="min-h-screen bg-background p-4 md:p-6 relative">
         <UserAvatar />
@@ -226,9 +303,43 @@ export default function StudentDashboard() {
           <p className="text-muted-foreground">Manage your hostel life efficiently</p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className={`grid gap-6 ${currentTab === 'overview' ? 'grid-cols-1 lg:grid-cols-3' : 'grid-cols-1 w-full max-w-4xl mx-auto'}`}>
           {/* Live Menu Board */}
-          <div className="lg:col-span-1 flex flex-col gap-6">
+          {(currentTab === 'overview' || currentTab === 'menu') && (
+            <div className={`${currentTab === 'overview' ? 'lg:col-span-1' : ''} flex flex-col gap-6`} id="live-menu">
+                {/* Active/Upcoming Meal Highlight */}
+                {activeMealInfo && (currentTab === 'overview' || currentTab === 'menu') && (
+                    <div className="bg-zinc-900 rounded-xl p-5 text-white shadow-xl border-t-4 border-yellow-500 overflow-hidden relative">
+                        <div className="absolute top-0 right-0 p-3 opacity-10">
+                            <Utensils className="h-24 w-24" />
+                        </div>
+                        <div className="flex items-center gap-2 mb-4">
+                            <span className="flex h-2 w-2 rounded-full bg-yellow-500 animate-ping"></span>
+                            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-yellow-500">{activeMealInfo.status}</span>
+                        </div>
+                        <div className="flex justify-between items-end">
+                            <div>
+                                <h2 className="text-3xl font-black capitalize tracking-tight mb-1">{activeMealInfo.meal}</h2>
+                                <p className="text-zinc-400 text-sm italic">
+                                    {timings?.[activeMealInfo.meal as keyof typeof timings] || 'Schedule pending'}
+                                </p>
+                            </div>
+                        </div>
+                        <div className="mt-6 space-y-2">
+                             {activeMealInfo.items.length > 0 ? (
+                                activeMealInfo.items.map((item, i) => (
+                                    <div key={i} className="flex items-center gap-3 bg-white/5 border border-white/10 p-2.5 rounded-lg backdrop-blur-sm">
+                                        <div className="h-1.5 w-1.5 rounded-full bg-yellow-500"></div>
+                                        <span className="text-sm font-medium">{item}</span>
+                                    </div>
+                                ))
+                             ) : (
+                                <p className="text-zinc-500 text-xs italic">No menu items found for this slot.</p>
+                             )}
+                        </div>
+                    </div>
+                )}
+
             <Tabs defaultValue="today" className="w-full">
                 <TabsList className="w-full bg-yellow-100 border border-yellow-200">
                     <TabsTrigger value="today" className="w-1/2 data-[state=active]:bg-yellow-500 data-[state=active]:text-black">Today's Menu</TabsTrigger>
@@ -241,37 +352,61 @@ export default function StudentDashboard() {
                         <p className="text-muted-foreground text-yellow-700 animate-pulse">Loading menu...</p>
                     </Card>
                     ) : (
-                    <MenuCard menu={todaysMenu} />
+                    <MenuCard menu={todaysMenu} timings={timings} />
                     )}
                 </TabsContent>
 
-                <TabsContent value="weekly" className="mt-4 space-y-4 max-h-[500px] overflow-y-auto pr-2">
+                <TabsContent value="weekly" className="mt-4">
                     {loadingMenu ? (
                         <Card className="h-[400px] flex items-center justify-center p-6 bg-gradient-to-br from-yellow-50 to-yellow-100 border-yellow-200">
                             <p className="text-muted-foreground text-yellow-700 animate-pulse">Loading menu...</p>
                         </Card>
                     ) : (
-                        daysOfWeek.map(day => (
-                            <Card key={day} className="border-l-4 border-l-yellow-400">
-                                <CardHeader className="py-3 bg-zinc-50 border-b">
-                                    <CardTitle className="text-md capitalize">{day}</CardTitle>
-                                </CardHeader>
-                                <CardContent className="py-3 space-y-2 text-sm">
-                                    <div className="flex flex-col gap-1">
-                                        <span className="font-semibold text-xs text-muted-foreground uppercase">Breakfast</span>
-                                        <span>{(weeklyMenu?.[day]?.breakfast || []).join(', ') || 'Not specified'}</span>
-                                    </div>
-                                    <div className="flex flex-col gap-1">
-                                        <span className="font-semibold text-xs text-muted-foreground uppercase">Lunch</span>
-                                        <span>{(weeklyMenu?.[day]?.lunch || []).join(', ') || 'Not specified'}</span>
-                                    </div>
-                                    <div className="flex flex-col gap-1">
-                                        <span className="font-semibold text-xs text-muted-foreground uppercase">Dinner</span>
-                                        <span>{(weeklyMenu?.[day]?.dinner || []).join(', ') || 'Not specified'}</span>
-                                    </div>
-                                </CardContent>
-                            </Card>
-                        ))
+                        <div className="bg-white border rounded-xl overflow-x-auto shadow-sm">
+                            <table className="w-full border-collapse min-w-[900px]">
+                                <thead>
+                                    <tr className="bg-zinc-900 text-white">
+                                        <th className="p-3 text-[10px] font-black uppercase text-left border-r border-zinc-700 w-24">Meal Slot</th>
+                                        {daysOfWeek.map(day => (
+                                            <th key={day} className="p-3 text-[10px] font-black uppercase text-center border-r border-zinc-700 last:border-r-0">
+                                                {day}
+                                            </th>
+                                        ))}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {(['breakfast', 'lunch', 'snacks', 'dinner'] as const).map((meal, mIdx) => (
+                                        <tr key={meal} className={mIdx % 2 === 0 ? 'bg-white' : 'bg-zinc-50/50'}>
+                                            <td className="p-3 border-r border-zinc-100 align-middle bg-zinc-50/80">
+                                                <span className="text-[10px] font-bold uppercase text-zinc-500 tracking-wider inline-block">{meal}</span>
+                                            </td>
+                                            {daysOfWeek.map(day => {
+                                                const items = weeklyMenu?.[day]?.[meal] || [];
+                                                return (
+                                                    <td key={`${day}-${meal}`} className="p-2 border-r border-zinc-100 last:border-r-0 align-top h-24">
+                                                        <div className="flex flex-col gap-1">
+                                                            {items.length > 0 ? (
+                                                                items.slice(0, 5).map((item: string, i: number) => (
+                                                                    <div key={i} className="text-[10px] leading-tight text-zinc-600 bg-white px-1.5 py-0.5 rounded border border-zinc-100 shadow-[0.5px_0.5px_1px_rgba(0,0,0,0.05)] truncate">
+                                                                        {item}
+                                                                    </div>
+                                                                ))
+                                                            ) : (
+                                                                <span className="text-[9px] text-zinc-300 italic">No entry</span>
+                                                            )}
+                                                            {items.length > 5 && <div className="text-[8px] text-yellow-600 font-bold px-1">+{items.length - 5} more...</div>}
+                                                        </div>
+                                                    </td>
+                                                );
+                                            })}
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                            <div className="p-2 bg-zinc-900/5 border-t text-[9px] text-zinc-500 text-center font-medium">
+                                💡 Tip: The matrix shows the entire week's schedule at a glance.
+                            </div>
+                        </div>
                     )}
                 </TabsContent>
             </Tabs>
@@ -280,10 +415,50 @@ export default function StudentDashboard() {
             <Card className="border-t-4 border-t-yellow-400 shadow-md">
                 <CardHeader className="pb-3">
                     <CardTitle className="text-lg flex items-center gap-2">
-                        Official PDF Menu
+                        Official Documents
                     </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
+                    {/* Direct XLSX Download */}
+                    <div className="p-4 bg-zinc-50 border border-zinc-200 rounded-lg flex items-center justify-between group hover:border-yellow-400 transition-all">
+                        <div className="flex items-center gap-3">
+                            <div className="p-2 bg-green-50 text-green-600 rounded-md">
+                                <Utensils className="h-5 w-5" />
+                            </div>
+                            <div>
+                                <p className="text-sm font-bold text-zinc-900">Weekly Mess Menu</p>
+                                <p className="text-[10px] text-zinc-500 uppercase font-medium">Excel Format (.xlsx)</p>
+                            </div>
+                        </div>
+                        <Button 
+                            variant="secondary"
+                            className="bg-zinc-900 text-white hover:bg-zinc-800"
+                            onClick={() => window.open('/mess_menu.xlsx', '_blank')}
+                        >
+                            Download
+                        </Button>
+                    </div>
+
+                    {/* Timing XLSX Download */}
+                    <div className="p-4 bg-zinc-50 border border-zinc-200 rounded-lg flex items-center justify-between group hover:border-blue-400 transition-all">
+                        <div className="flex items-center gap-3">
+                            <div className="p-2 bg-blue-50 text-blue-600 rounded-md">
+                                <Clock className="h-5 w-5" />
+                            </div>
+                            <div>
+                                <p className="text-sm font-bold text-zinc-900">Mess Timings</p>
+                                <p className="text-[10px] text-zinc-500 uppercase font-medium">Excel Format (.xlsx)</p>
+                            </div>
+                        </div>
+                        <Button 
+                            variant="secondary"
+                            className="bg-zinc-900 text-white hover:bg-zinc-800"
+                            onClick={() => window.open('/mess_timing.xlsx', '_blank')}
+                        >
+                            Download
+                        </Button>
+                    </div>
+
                     {pdfUrl && (
                         <Button 
                             variant="outline" 
@@ -350,10 +525,11 @@ export default function StudentDashboard() {
                 </CardContent>
             </Card>
           </div>
+          )}
 
-          {/* Review Menu Modal (Overlay) */}
-          {isReviewing && parsedMenu && (
-            <div className="fixed inset-0 z-50 bg-black/50 flex flex-col items-center justify-center p-4 sm:p-6 overflow-y-auto">
+        {/* Review Menu Modal (Overlay) - Moved outside the grid to avoid structure confusion */}
+        {isReviewing && parsedMenu && (
+          <div className="fixed inset-0 z-50 bg-black/50 flex flex-col items-center justify-center p-4 sm:p-6 overflow-y-auto">
                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col mt-10">
                     <div className="p-4 sm:p-6 border-b flex justify-between items-center bg-yellow-50 rounded-t-xl sticky top-0 z-10 shrink-0">
                         <div>
@@ -408,7 +584,8 @@ export default function StudentDashboard() {
           )}
 
           {/* Food Polls */}
-          <div className="lg:col-span-1">
+          {(currentTab === 'overview' || currentTab === 'polls') && (
+          <div className={currentTab === 'overview' ? 'lg:col-span-1' : ''} id="food-polls">
             <Card className="h-full border-2 border-dashed border-yellow-300">
               <CardHeader>
                 <div className="flex items-center gap-2">
@@ -446,15 +623,19 @@ export default function StudentDashboard() {
               </CardContent>
             </Card>
           </div>
+          )}
 
           {/* My Attendance */}
-          <div className="lg:col-span-1">
+          {(currentTab === 'overview' || currentTab === 'attendance') && (
+          <div className={currentTab === 'overview' ? 'lg:col-span-1' : ''} id="my-attendance">
             <AttendanceTable 
               records={attendanceData}
               className="h-full"
             />
           </div>
+          )}
         </div>
+        {/* End of Grid */}
       </div>
     </div>
   );

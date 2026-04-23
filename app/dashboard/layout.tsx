@@ -1,35 +1,74 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { Users, UserCheck, Utensils } from 'lucide-react';
+import { usePathname, useSearchParams } from 'next/navigation';
+import { Users, UserCheck, Utensils, ShieldAlert, Vote, CalendarDays, LayoutDashboard } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ProtectedRoute } from '@/components/protected-route';
 import { GoogleSignIn } from '@/components/google-signin';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  return (
+    <SuspenseWrapper>
+      <DashboardSidebar>{children}</DashboardSidebar>
+    </SuspenseWrapper>
+  );
+}
+
+function DashboardSidebar({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const currentTab = searchParams.get('tab') || 'overview';
+
+  const { user } = useAuth();
+  const isStudent = user?.email?.includes('@ug.sharda.ac.in');
+  const isAdmin = user?.email === 'admin@checkme.com';
 
   const navItems = [
-    {
-      title: 'Student Dashboard',
-      href: '/dashboard/student',
-      icon: <Users className="h-4 w-4" />,
-    },
-    {
-      title: 'Warden Dashboard',
-      href: '/dashboard/warden',
-      icon: <UserCheck className="h-4 w-4" />,
-    },
-    {
-      title: 'Mess Dashboard',
-      href: '/dashboard/mess',
-      icon: <Utensils className="h-4 w-4" />,
-    },
+    ...(!isAdmin ? [
+      {
+        title: 'Students Hub',
+        href: '/dashboard/student',
+        icon: <LayoutDashboard className="h-4 w-4" />,
+      },
+      {
+        title: 'Live Menu',
+        href: '/dashboard/student?tab=menu',
+        icon: <Utensils className="h-4 w-4" />,
+      },
+      {
+        title: 'Food Polls',
+        href: '/dashboard/student?tab=polls',
+        icon: <Vote className="h-4 w-4" />,
+      },
+      {
+        title: 'My Attendance',
+        href: '/dashboard/student?tab=attendance',
+        icon: <CalendarDays className="h-4 w-4" />,
+      }
+    ] : []),
+    ...(!isStudent && !isAdmin ? [
+      {
+        title: 'Warden Dashboard',
+        href: '/dashboard/warden',
+        icon: <UserCheck className="h-4 w-4" />,
+      },
+      {
+        title: 'Mess Dashboard',
+        href: '/dashboard/mess',
+        icon: <Utensils className="h-4 w-4" />,
+      }
+    ] : []),
+    ...(isAdmin ? [{
+      title: 'Admin Dashboard',
+      href: '/dashboard/admin',
+      icon: <ShieldAlert className="h-4 w-4" />,
+    }] : [])
   ];
 
   return (
@@ -45,19 +84,26 @@ export default function DashboardLayout({
             </div>
             <div className="flex-1">
               <nav className="grid items-start px-2 text-sm font-medium lg:px-4">
-                {navItems.map((item) => (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={`flex items-center gap-3 rounded-lg px-3 py-2 transition-all ${pathname === item.href
-                      ? 'bg-primary text-primary-foreground'
-                      : 'text-muted-foreground hover:bg-muted'
-                      }`}
-                  >
-                    {item.icon}
-                    {item.title}
-                  </Link>
-                ))}
+                {navItems.map((item) => {
+                  const isActive = item.href === pathname || 
+                                   (pathname === item.href.split('?')[0] && 
+                                    ((currentTab === 'overview' && !item.href.includes('?')) || 
+                                     (currentTab !== 'overview' && item.href.includes(`tab=${currentTab}`))));
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={`flex items-center gap-3 rounded-lg px-3 py-2 transition-all ${
+                        isActive
+                        ? 'bg-primary text-primary-foreground'
+                        : 'text-muted-foreground hover:bg-muted'
+                        }`}
+                    >
+                      {item.icon}
+                      {item.title}
+                    </Link>
+                  );
+                })}
               </nav>
             </div>
             <div className="mt-auto p-4 border-t">
@@ -68,12 +114,18 @@ export default function DashboardLayout({
 
         {/* Mobile Navigation */}
         <div className="md:hidden fixed bottom-0 left-0 right-0 bg-background border-t z-50">
-          <div className="grid grid-cols-3">
-            {navItems.map((item) => (
+          <div className={navItems.length === 1 ? "grid grid-cols-1" : "grid grid-cols-3"}>
+            {navItems.map((item) => {
+              const isActive = item.href === pathname || 
+                               (pathname === item.href.split('?')[0] && 
+                                ((currentTab === 'overview' && !item.href.includes('?')) || 
+                                 (currentTab !== 'overview' && item.href.includes(`tab=${currentTab}`))));
+              return (
               <Link
                 key={item.href}
                 href={item.href}
-                className={`flex flex-col items-center justify-center p-3 text-xs ${pathname === item.href
+                className={`flex flex-col items-center justify-center p-3 text-xs ${
+                  isActive
                   ? 'text-primary'
                   : 'text-muted-foreground'
                   }`}
@@ -81,7 +133,7 @@ export default function DashboardLayout({
                 <div className="mb-1">{item.icon}</div>
                 {item.title.split(' ')[0]}
               </Link>
-            ))}
+            )})}
           </div>
         </div>
 
@@ -94,4 +146,14 @@ export default function DashboardLayout({
       </div>
     </ProtectedRoute>
   );
+}
+
+// Wrapper to satisfy Next.js useSearchParams suspense requirement
+import React, { Suspense } from 'react';
+function SuspenseWrapper({ children }: { children: React.ReactNode }) {
+  return (
+    <Suspense fallback={<div>Loading mapping...</div>}>
+      {children}
+    </Suspense>
+  )
 }

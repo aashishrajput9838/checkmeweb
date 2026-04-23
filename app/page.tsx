@@ -12,6 +12,8 @@ import { useAuth } from '@/contexts/AuthContext'
 export default function Page() {
   const { user } = useAuth();
   const router = useRouter();
+  
+  const isStudent = user?.email?.includes('@ug.sharda.ac.in');
 
   useEffect(() => {
     if (user?.email === 'admin@checkme.com') {
@@ -79,7 +81,7 @@ export default function Page() {
             <div className="grid grid-cols-4 gap-6 mb-8">
 
               {/* Get Started Card - Large */}
-              <div className="col-span-1 bg-white rounded-2xl p-6 flex flex-col justify-between h-80">
+              <Link href="/dashboard/student" className="col-span-1 bg-white rounded-2xl p-6 flex flex-col justify-between h-80 relative hover:shadow-lg transition-shadow cursor-pointer">
                 <div>
                   <h2 className="text-4xl font-bold text-black mb-2">Getting Started</h2>
                   <p className="text-gray-600 text-sm">View menus and manage attendance</p>
@@ -98,7 +100,7 @@ export default function Page() {
 
                 {/* D Badge */}
                 <UserAvatar />
-              </div>
+              </Link>
 
               {/* Tutorial Cards - Middle Column */}
               <div className="col-span-1 flex flex-col gap-6">
@@ -120,20 +122,22 @@ export default function Page() {
                 </Link>
 
                 {/* Warden Dashboard */}
-                <Link href="/dashboard/warden" className="bg-white border-4 border-yellow-400 rounded-2xl p-5 relative h-48 hover:shadow-lg transition-shadow">
-                  <div className="flex items-center justify-between mb-2">
-                    <div>
-                      <p className="text-xs text-gray-500 font-semibold">Warden</p>
-                      <h3 className="text-lg font-bold text-black">Warden Dashboard</h3>
+                {!isStudent && (
+                  <Link href="/dashboard/warden" className="bg-white border-4 border-yellow-400 rounded-2xl p-5 relative h-48 hover:shadow-lg transition-shadow">
+                    <div className="flex items-center justify-between mb-2">
+                      <div>
+                        <p className="text-xs text-gray-500 font-semibold">Warden</p>
+                        <h3 className="text-lg font-bold text-black">Warden Dashboard</h3>
+                      </div>
+                      <div className="w-8 h-8 bg-gray-700 rounded-full flex items-center justify-center text-white">
+                        <UserCheck size={16} />
+                      </div>
                     </div>
-                    <div className="w-8 h-8 bg-gray-700 rounded-full flex items-center justify-center text-white">
-                      <UserCheck size={16} />
+                    <div className="flex justify-center items-center h-32">
+                      <div className="text-5xl">📋</div>
                     </div>
-                  </div>
-                  <div className="flex justify-center items-center h-32">
-                    <div className="text-5xl">📋</div>
-                  </div>
-                </Link>
+                  </Link>
+                )}
               </div>
 
               {/* Project Cards - Right Columns */}
@@ -154,18 +158,20 @@ export default function Page() {
                 </Link>
 
                 {/* Mess Dashboard */}
-                <Link href="/dashboard/mess" className="bg-gray-900 rounded-2xl p-6 text-white flex flex-col justify-between h-80 hover:shadow-lg transition-shadow">
-                  <div>
-                    <p className="text-xs text-gray-400 mb-1">Mess Staff</p>
-                    <h3 className="text-2xl font-bold">Mess Dashboard</h3>
-                  </div>
-                  <div className="flex justify-center items-center h-40">
-                    <div className="text-7xl">🍳</div>
-                  </div>
-                  <div className="absolute top-6 right-6 w-8 h-8 bg-gray-700 rounded-full flex items-center justify-center text-white hover:bg-gray-600">
-                    <Utensils size={18} />
-                  </div>
-                </Link>
+                {!isStudent && (
+                  <Link href="/dashboard/mess" className="bg-gray-900 rounded-2xl p-6 text-white flex flex-col justify-between h-80 hover:shadow-lg transition-shadow">
+                    <div>
+                      <p className="text-xs text-gray-400 mb-1">Mess Staff</p>
+                      <h3 className="text-2xl font-bold">Mess Dashboard</h3>
+                    </div>
+                    <div className="flex justify-center items-center h-40">
+                      <div className="text-7xl">🍳</div>
+                    </div>
+                    <div className="absolute top-6 right-6 w-8 h-8 bg-gray-700 rounded-full flex items-center justify-center text-white hover:bg-gray-600">
+                      <Utensils size={18} />
+                    </div>
+                  </Link>
+                )}
               </div>
             </div>
 
