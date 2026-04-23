@@ -1,4 +1,5 @@
 import React from 'react';
+import Link from 'next/link';
 import { Github, Twitter, Mail, Heart, Linkedin, Globe, Phone } from 'lucide-react';
 
 export function Footer() {
@@ -52,9 +53,9 @@ export function Footer() {
           <h4 className="text-white font-bold mb-6 uppercase text-xs tracking-[0.3em] text-yellow-500">Navigation</h4>
           <ul className="space-y-4 text-zinc-400 text-sm">
             <li><a href="#features" className="hover:text-white transition">Features</a></li>
-            <li><a href="#" className="hover:text-white transition">Privacy Policy</a></li>
-            <li><a href="#" className="hover:text-white transition">Terms of Service</a></li>
-            <li><a href="#" className="hover:text-white transition">Support Hub</a></li>
+            <li><Link href="/privacy" className="hover:text-white transition">Privacy Policy</Link></li>
+            <li><Link href="/terms" className="hover:text-white transition">Terms of Service</Link></li>
+            <li><Link href="/support" className="hover:text-white transition">Support Hub</Link></li>
           </ul>
         </div>
       </div>
