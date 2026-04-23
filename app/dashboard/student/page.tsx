@@ -49,12 +49,17 @@ export default function StudentDashboard() {
   };
 
   const handleProcessMenu = async () => {
-    if (!file) return;
+    if (!file || !user) return;
     setIsProcessing(true);
     try {
+        const token = await user.getIdToken();
         const formData = new FormData();
         formData.append('file', file);
-        const res = await fetch('/api/mess/upload', { method: 'POST', body: formData });
+        const res = await fetch('/api/mess/upload', { 
+            method: 'POST', 
+            body: formData,
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
         const data = await res.json();
         if (data.error) throw new Error(data.error);
         setParsedMenu(data.menu);
@@ -95,7 +100,8 @@ export default function StudentDashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-background p-4 md:p-6 relative">
+    <ProtectedRoute allowedRoles={['student', 'representative', 'admin']}>
+        <div className="min-h-screen bg-background p-4 md:p-6 relative">
       <UserAvatar />
       <div className="max-w-7xl mx-auto">
         <div className="mb-8">
@@ -167,5 +173,6 @@ export default function StudentDashboard() {
         />
       </div>
     </div>
+    </ProtectedRoute>
   );
 }

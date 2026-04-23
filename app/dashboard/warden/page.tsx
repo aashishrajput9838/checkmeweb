@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { ProtectedRoute } from '@/components/protected-route';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { db } from '@/lib/firebase';
 import { collection, query, onSnapshot } from 'firebase/firestore';
@@ -60,6 +61,7 @@ export default function WardenDashboard() {
   }, []);
 
   return (
+    <ProtectedRoute allowedRoles={['warden', 'admin']}>
     <div className="min-h-screen bg-background p-4 md:p-6 space-y-6">
         {/* Header Section */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-zinc-900 p-6 rounded-2xl text-white">
@@ -157,5 +159,6 @@ export default function WardenDashboard() {
             </div>
         </div>
     </div>
+    </ProtectedRoute>
   );
 }

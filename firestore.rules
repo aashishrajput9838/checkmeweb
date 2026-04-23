@@ -1,0 +1,49 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper to check if user is admin
+    function isAdmin() {
+      return get(/databases/$(database)/documents/users/$(request.auth.token.email)).data.role == 'admin';
+    }
+    
+    // Helper to check if user has specific role
+    function hasRole(role) {
+      return get(/databases/$(database)/documents/users/$(request.auth.token.email)).data.role == role;
+    }
+
+    match /users/{userId} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin() || (request.auth.token.email == userId);
+    }
+    
+    match /mess_menu/{document} {
+      allow read: if true;
+      allow write: if hasRole('representative') || isAdmin() || hasRole('staff');
+    }
+    
+    match /daily_overrides/{date} {
+      allow read: if true;
+      allow write: if hasRole('staff') || isAdmin();
+    }
+    
+    match /monthly_surveys/{surveyId} {
+      allow read: if true;
+      allow write: if hasRole('staff') || isAdmin();
+      
+      match /votes/{userId} {
+        allow read: if request.auth != null && (request.auth.token.email == userId || isAdmin());
+        allow write: if request.auth != null && request.auth.token.email == userId;
+      }
+    }
+    
+    match /inventory/{itemId} {
+      allow read: if request.auth != null;
+      allow write: if hasRole('staff') || isAdmin();
+    }
+    
+    match /attendance/{date} {
+      allow read: if request.auth != null;
+      allow write: if hasRole('warden') || isAdmin();
+    }
+  }
+}

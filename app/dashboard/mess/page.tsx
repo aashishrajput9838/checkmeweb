@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { ProtectedRoute } from '@/components/protected-route';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { setDoc, deleteDoc } from 'firebase/firestore';
 import { Input } from '@/components/ui/input';
@@ -11,7 +12,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 import { Utensils, AlertTriangle, TrendingUp, FileText } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { AnalyticsChart } from '@/components/modules/AnalyticsChart';
-import { db } from '@/lib/firebase';
+import { db, auth } from '@/lib/firebase';
 import { doc, onSnapshot, updateDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { useSearchParams } from 'next/navigation';
 import { InventoryCard } from '@/components/modules/InventoryCard';
@@ -184,9 +185,13 @@ export default function MessDashboard() {
   const handleCreateSurvey = async () => {
     setIsSurveyProcessing(true);
     try {
+        const token = await auth.currentUser?.getIdToken();
         const res = await fetch('/api/survey', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
             body: JSON.stringify(surveyForm)
         });
         if (!res.ok) throw new Error('Failed to create survey');
@@ -222,9 +227,13 @@ export default function MessDashboard() {
     if (!activeSurvey) return;
     setIsSurveyProcessing(true);
     try {
+        const token = await auth.currentUser?.getIdToken();
         const res = await fetch('/api/survey/generate', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
             body: JSON.stringify({ monthId: activeSurvey.id })
         });
         if (!res.ok) throw new Error('Menu generation failed');
@@ -320,7 +329,8 @@ export default function MessDashboard() {
   const lowStockItems = inventoryList.filter(item => item.stock <= (item.threshold || 5));
 
   return (
-    <div className="min-h-screen bg-background p-4 md:p-6">
+    <ProtectedRoute allowedRoles={['staff', 'admin']}>
+        <div className="min-h-screen bg-background p-4 md:p-6">
       <div className="max-w-7xl mx-auto">
         <div className="mb-8">
           <h1 className="text-3xl font-bold">Mess Staff Dashboard</h1>
@@ -655,5 +665,6 @@ export default function MessDashboard() {
         )}
       </div>
     </div>
+    </ProtectedRoute>
   );
 }

@@ -1,8 +1,16 @@
+import { auth } from "@/lib/firebase";
+
 export const surveyService = {
     async submitVote(monthId: string, userId: string, selections: any) {
+        const user = auth.currentUser;
+        const token = await user?.getIdToken();
+
         const res = await fetch('/api/survey/vote', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
             body: JSON.stringify({ monthId, userId, selections })
         });
         if (!res.ok) throw new Error('Vote submission failed');

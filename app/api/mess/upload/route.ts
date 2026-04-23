@@ -1,12 +1,17 @@
 import { NextResponse } from 'next/server';
-// import removed
 import Tesseract from 'tesseract.js';
 import * as xlsx from 'xlsx';
-
 import { parseMessMenuText } from '@/lib/parsers/messMenuParser';
+import { verifyAuth } from '@/lib/api-middleware';
 
 export async function POST(request: Request) {
   try {
+    // Security: Only Representative or Admin can upload menus
+    const authResult = await verifyAuth(request, ['representative', 'admin']);
+    if ('error' in authResult) {
+        return NextResponse.json({ error: authResult.error }, { status: authResult.status });
+    }
+
     const formData = await request.formData();
     const file = formData.get('file') as File;
 
@@ -18,10 +23,6 @@ export async function POST(request: Request) {
     let extractedText = '';
     const fileName = file.name.toLowerCase();
     
-    // DEBUG: Dump file to disk so we can inspect it! (Note: will fail in some public environments like Vercel if not carefully handled)
-    // require('fs').writeFileSync('debug_uploaded_file.pdf', buffer);
-    console.log(`\n\n[DEBUG UPLOAD] Received file: ${fileName}, MIME: ${file.type}, Size: ${buffer.length} bytes\n\n`);
-
     const isImage = file.type.startsWith('image/') || fileName.endsWith('.jpg') || fileName.endsWith('.png') || fileName.endsWith('.jpeg');
     const isPdf = file.type === 'application/pdf' || fileName.endsWith('.pdf') || file.type === 'application/octet-stream';
     const isExcel = fileName.endsWith('.xlsx') || file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
@@ -32,12 +33,7 @@ export async function POST(request: Request) {
          extractedText = pdfData.text || '';
       } catch (e: any) {
          console.warn("[PDF PARSE ISSUE]", e.message);
-         extractedText = ''; // Fallback to empty string on parse crash
-      }
-
-      if (extractedText.trim().length < 15) {
-         // Gracefully pass instead of throwing 400, allowing the user to just bypass OCR and save the file manually!
-         console.warn("PDF parsed successfully but contained no readable text. Returning empty grid.");
+         extractedText = ''; 
       }
     } else if (isImage) {
       try {
@@ -64,8 +60,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unsupported file type. Please upload a .pdf, .jpg, .png or .xlsx' }, { status: 400 });
     }
 
-    console.log("Raw Extracted Text:", extractedText.substring(0, 500) + '...');
-
     const parsedData = parseMessMenuText(extractedText);
 
     return NextResponse.json({ 
@@ -76,7 +70,6 @@ export async function POST(request: Request) {
 
   } catch (error: any) {
     console.error('Error processing file:', error);
-    // Don't completely fail 500 on unexpected errors, just return empty grid to unblock the user's manual upload!
     const emptyGrid = parseMessMenuText('');
     return NextResponse.json({ 
         success: true, 
