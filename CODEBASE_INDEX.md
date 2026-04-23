@@ -1,222 +1,102 @@
-# CheckMe Codebase Index
+# CheckMe Codebase Index (Updated)
 
 ## Project Overview
 **CheckMe** - Smart Hostel & Mess Management System
 A real-time hostel and mess management system built with Next.js 16, React 19, and TypeScript.
 
+**Last Indexed**: April 24, 2026
+
 ## Technology Stack
-- **Framework**: Next.js 16.1.6
-- **React**: 19.2.4
-- **Language**: TypeScript 5.7.3
-- **UI Library**: Radix UI components
-- **Styling**: Tailwind CSS v4
-- **Component Library**: shadcn/ui (New York style)
+- **Framework**: Next.js 16.1.6 (App Router)
+- **Frontend**: React 19.2.4, TypeScript 5.7.3
+- **Styling**: Tailwind CSS v4.1.9, PostCSS
+- **UI Components**: Radix UI (30+ primitives), shadcn/ui (New York style)
 - **Icons**: Lucide React
-- **Form Handling**: React Hook Form + Zod
-- **State Management**: React Context + Custom Hooks
-- **Animations**: Tailwind CSS animations
+- **Data Processing**: 
+  - `Tesseract.js`: OCR for image-based menus
+  - `xlsx`: Excel parsing
+  - `pdf-parse-new`: PDF text extraction
+- **Backend Services**:
+  - `Firebase`: Authentication and Firestore database
+  - `OpenAI`: AI-powered data processing (likely for menu parsing enrichment)
+- **State Management**: React Context (`AuthContext`) + Custom Hooks
 - **Analytics**: Vercel Analytics
 
-## Project Structure
+## Directory Structure
 
-```
+```text
 checkme/
-├── app/                    # Next.js App Router
-│   ├── globals.css        # Global styles and Tailwind config
-│   ├── layout.tsx         # Root layout with metadata
-│   └── page.tsx           # Main landing page
-├── components/            # React components
-│   ├── ui/               # shadcn/ui components (50+ components)
-│   └── theme-provider.tsx # Theme provider component
-├── hooks/                # Custom React hooks
-│   ├── use-mobile.ts     # Mobile detection hook
-│   └── use-toast.ts      # Toast notification hook
-├── lib/                  # Utility functions
-│   └── utils.ts          # cn() utility function
-└── styles/               # Additional styles
-    └── globals.css       # Duplicate global styles
+├── app/                        # Next.js App Router
+│   ├── api/                    # API Routes (Serverless Functions)
+│   │   ├── foodFeedback/       # Feedback submission
+│   │   ├── getFoodImage/       # AI/External image fetching
+│   │   ├── mess/               # Mess menu data and uploads
+│   │   ├── poll/               # Poll management
+│   │   ├── survey/             # Survey management
+│   │   ├── updateStock/        # Inventory/Stock updates
+│   │   └── vote/               # Voting logic
+│   ├── dashboard/              # Main application pages
+│   │   └── student/            # Student-specific dashboard
+│   ├── login/                  # Authentication pages
+│   ├── seed/                   # Database seeding routes
+│   ├── layout.tsx              # Root layout
+│   └── page.tsx                # Landing page
+├── components/                 # React components
+│   ├── ui/                     # shadcn/ui base components
+│   └── theme-provider.tsx      # Next-themes wrapper
+├── contexts/                   # Global React contexts
+│   └── AuthContext.tsx         # Firebase auth state provider
+├── lib/                        # Shared logic and utilities
+│   ├── parsers/                # Data parsing logic (e.g., messMenuParser.ts)
+│   ├── firebase.ts             # Firebase initialization
+│   ├── pollController.ts       # Business logic for polls
+│   ├── surveyController.ts     # Business logic for surveys
+│   └── utils.ts                # Styling utilities (cn)
+├── scripts/                    # Database automation scripts
+│   ├── seedInventory.js        # Inventory data seeding
+│   ├── seedPoll.ts             # Poll data seeding
+│   └── seedStudents.js         # Student record seeding
+├── public/                     # Static assets
+└── styles/                     # Global CSS
 ```
 
-## Core Configuration Files
+## Core Features & Logic
 
-### package.json
-- **Name**: my-project
-- **Scripts**: dev, build, start, lint
-- **Key Dependencies**:
-  - `@radix-ui/*` - 30+ Radix UI primitives
-  - `lucide-react` - Icon library
-  - `class-variance-authority` - Component variants
-  - `tailwind-merge` - Class merging utility
-  - `react-hook-form` - Form handling
-  - `zod` - Schema validation
-  - `next-themes` - Theme management
-  - `sonner` - Toast notifications
-  - `recharts` - Data visualization
+### 1. Mess Menu Management
+- **Upload**: `app/api/mess/upload/route.ts` handles PDF, Image, and Excel uploads.
+- **Parsing**: `lib/parsers/messMenuParser.ts` converts extracted text into a structured JSON grid.
+- **OCR**: Uses `Tesseract.js` for images and `pdf-parse-new` for PDFs.
 
-### tsconfig.json
-- Target: ES6
-- Module resolution: bundler
-- Strict mode enabled
-- Path aliases: `@/*` maps to project root
+### 2. Authentication
+- **Provider**: Firebase Auth.
+- **Implementation**: `contexts/AuthContext.tsx` provides `user` and `loading` states via the `useAuth` hook.
 
-### next.config.mjs
-- TypeScript build errors ignored
-- Images unoptimized
+### 3. Dashboard
+- **Student Dashboard**: `app/dashboard/student/page.tsx` (Complex page with 56KB+ of logic).
+- **Redirection**: Main `/dashboard` redirects automatically based on role/status.
 
-### components.json
-- Style: New York
-- RSC: Enabled
-- Tailwind CSS configuration
-- Path aliases configured
+### 4. Interactive Features
+- **Polls & Surveys**: Managed via `lib/pollController.ts` and `lib/surveyController.ts`.
+- **Feedback**: Integrated food feedback system.
 
-## Main Application Files
+## Database Seeding
+The project includes several seeding scripts to populate Firestore:
+- `pnpm run seed:inventory` (via `scripts/seedInventory.js`)
+- `pnpm run seed:poll` (via `scripts/seedPoll.ts`)
+- `pnpm run seed:students` (via `scripts/seedStudents.js`)
 
-### app/layout.tsx
-- Root layout component
-- Metadata configuration:
-  - Title: "CheckMe - Smart Hostel & Mess Management System"
-  - Description: Real-time hostel management system
-  - Icons: Light/dark mode support
-- Vercel Analytics integration
-- Geist font family
+## Notable Dependencies
+- `cmdk`: Command palette logic.
+- `embla-carousel-react`: For carousels (e.g., menu display).
+- `recharts`: For analytics visualization.
+- `sonner` / `radix-ui/react-toast`: Feedback notifications.
+- `vaul`: Drawer components.
+- `input-otp`: One-time password inputs.
 
-### app/page.tsx
-- Main landing page component (Client Component)
-- Features a vibrant yellow/black design
-- Key sections:
-  - Header with logo and navigation
-  - Getting Started card with stylus illustration
-  - Feature cards (Real-Time Menu, Digital Attendance)
-  - Project cards (Smart Analytics, Notice & Alerts)
-  - Bottom navigation bar
-- Uses Lucide React icons
-- Responsive grid layout
-
-### app/globals.css
-- Tailwind CSS v4 configuration
-- Custom color variables (OKLCH color space)
-- Light/dark theme support
-- Custom variants and theme configuration
-- Base styles for border and outline
-
-## Core Components
-
-### Utility Components
-- **Button** (`components/ui/button.tsx`) - Variants: default, destructive, outline, secondary, ghost, link
-- **Card** (`components/ui/card.tsx`) - Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter
-- **Input** (`components/ui/input.tsx`) - Styled input field with validation states
-- **Label** (`components/ui/label.tsx`) - Form labels with accessibility
-- **Textarea** (`components/ui/textarea.tsx`) - Multi-line text input
-
-### Form Components
-- **Form** (`components/ui/form.tsx`) - React Hook Form integration with Zod validation
-- **Select** (`components/ui/select.tsx`) - Dropdown selection component
-- **Checkbox** (`components/ui/checkbox.tsx`) - Styled checkbox with check icon
-- **Switch** (`components/ui/switch.tsx`) - Toggle switch component
-
-### Data Display
-- **Table** (`components/ui/table.tsx`) - Data table with header, body, rows, cells
-- **Badge** (`components/ui/badge.tsx`) - Status badges with variants
-- **Alert** (`components/ui/alert.tsx`) - Alert messages with title/description
-- **Progress** (`components/ui/progress.tsx`) - Progress bar component
-
-### Feedback & Interaction
-- **Dialog** (`components/ui/dialog.tsx`) - Modal dialogs with overlay
-- **Tooltip** (`components/ui/tooltip.tsx`) - Hover tooltips
-- **Toast** (`components/ui/toast.tsx`) - Notification toasts
-- **Toaster** (`components/ui/toaster.tsx`) - Toast container
-- **Sonner** (`components/ui/sonner.tsx`) - Alternative toast system
-- **Spinner** (`components/ui/spinner.tsx`) - Loading spinner
-
-### Layout & Navigation
-- **Tabs** (`components/ui/tabs.tsx`) - Tabbed interface
-- **Accordion** (`components/ui/accordion.tsx`) - Collapsible sections
-- **Navigation Menu** (`components/ui/navigation-menu.tsx`) - Navigation menus
-- **Breadcrumb** (`components/ui/breadcrumb.tsx`) - Breadcrumb navigation
-- **Pagination** (`components/ui/pagination.tsx`) - Pagination controls
-
-### Advanced Components
-- **Calendar** (`components/ui/calendar.tsx`) - Date picker
-- **Chart** (`components/ui/chart.tsx`) - Data visualization wrapper
-- **Carousel** (`components/ui/carousel.tsx`) - Image/content carousel
-- **Command** (`components/ui/command.tsx`) - Command palette
-- **Drawer** (`components/ui/drawer.tsx`) - Slide-out panels
-- **Sheet** (`components/ui/sheet.tsx`) - Side panels
-- **Popover** (`components/ui/popover.tsx`) - Popover dialogs
-- **Dropdown Menu** (`components/ui/dropdown-menu.tsx`) - Dropdown menus
-
-## Utility Functions
-
-### lib/utils.ts
-- `cn(...inputs: ClassValue[])` - Class name merging utility using `clsx` and `tailwind-merge`
-
-## Custom Hooks
-
-### hooks/use-mobile.ts
-- `useIsMobile()` - Detects mobile viewport (768px breakpoint)
-
-### hooks/use-toast.ts
-- `useToast()` - Toast notification management
-- `toast()` - Toast creation function
-- State management for toast notifications
-
-## Theme System
-
-### components/theme-provider.tsx
-- Wrapper for `next-themes` ThemeProvider
-- Enables light/dark theme switching
-
-## Styling System
-
-### Design Tokens
-- **Colors**: OKLCH color space with light/dark variants
-- **Typography**: Geist font family
-- **Spacing**: Consistent padding/margin system
-- **Radius**: Configurable border radius
-- **Shadows**: Custom shadow system
-
-### Component Styling
-- Data attributes for styling (`data-slot`)
-- CSS variables for theming
-- Responsive design patterns
-- Accessibility-focused styling
-
-## Key Features Implemented
-
-1. **Responsive Design** - Mobile-first approach with mobile detection
-2. **Dark Mode** - Complete light/dark theme support
-3. **Component Library** - 50+ production-ready UI components
-4. **Form Validation** - Zod schema validation with React Hook Form
-5. **Toast Notifications** - Multiple notification systems (Radix UI + Sonner)
-6. **Accessibility** - Proper ARIA labels and keyboard navigation
-7. **Type Safety** - Full TypeScript support throughout
-8. **Performance** - Optimized with Next.js 16 features
-
-## Development Setup
-
-1. Install dependencies: `pnpm install`
-2. Run development server: `pnpm dev`
-3. Build for production: `pnpm build`
-4. Start production server: `pnpm start`
-
-## Notable Patterns
-
-- **Component Composition** - Reusable component patterns
-- **Props Spreading** - Consistent prop handling
-- **Forward Refs** - Proper ref forwarding for DOM access
-- **Conditional Rendering** - Clean conditional logic
-- **State Management** - Custom hooks for business logic
-- **Error Handling** - Proper error boundaries and validation
-
-## Future Considerations
-
-- API integration points
-- Database schema design
-- Authentication system
-- Real-time features with WebSockets
-- Mobile app development
-- Admin dashboard
-- Student/warden role-based access
+## Development Scripts
+- `pnpm dev`: Start development server.
+- `pnpm build`: Production build.
+- `pnpm lint`: Linting with ESLint.
 
 ---
-*Last indexed: February 17, 2026*
+*Index updated by Antigravity AI*
