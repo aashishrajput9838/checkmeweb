@@ -6,7 +6,9 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
-  serverExternalPackages: ['tesseract.js', 'pdf-parse-new'],
+  serverExternalPackages: ['tesseract.js', 'pdf-parse-new', 'firebase-admin'],
 }
 
 export default nextConfig
+// Triggering config refresh for auth fixes
+

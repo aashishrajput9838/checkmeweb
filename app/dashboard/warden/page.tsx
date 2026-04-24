@@ -1,26 +1,26 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { ProtectedRoute } from '@/components/protected-route';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { db } from '@/lib/firebase';
-import { collection, query, onSnapshot } from 'firebase/firestore';
+import { collection, query, onSnapshot, getDoc, doc, setDoc } from 'firebase/firestore';
 import { AnalyticsChart } from '@/components/modules/AnalyticsChart';
 import { FoodPoll } from '@/components/modules/FoodPoll';
 import { AttendanceMarker } from '@/components/modules/AttendanceMarker';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Users, ChartBar, Vote, CalendarCheck, Megaphone, Send, Loader2 } from 'lucide-react';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import { setDoc, doc } from 'firebase/firestore';
+import { useAuth } from '@/contexts/AuthContext';
+import { resolveUserRole } from '@/lib/roles';
 
-export default function WardenDashboard() {
+function WardenDashboardContent() {
+  const { user } = useAuth();
   const searchParams = useSearchParams();
   const currentTab = searchParams.get('tab') || 'attendance';
   const [loading, setLoading] = useState(true);
-  const [inventoryList, setInventoryList] = useState<any[]>([]);
   const [foodAnalyticsData, setFoodAnalyticsData] = useState<any[]>([]);
   const [notice, setNotice] = useState('');
   const [isBroadcasting, setIsBroadcasting] = useState(false);
@@ -45,16 +45,40 @@ export default function WardenDashboard() {
     }
   };
 
+  const unsubRef = useRef<() => void>();
+
   useEffect(() => {
     if (!user) return;
     
-    // Only run listeners if user has a valid warden or admin role
     const checkAndSubscribe = async () => {
-        const userDoc = await getDoc(doc(db, 'users', user.email!));
-        const role = userDoc.exists() ? userDoc.data()?.role : 'student';
-        
+        try {
+            const userDoc = await getDoc(doc(db, 'users', user.email!));
+            const firestoreRole = userDoc.exists() ? userDoc.data()?.role : null;
+            const role = resolveUserRole(user.email, firestoreRole);
+            
+            if (role === 'warden' || role === 'admin') {
+                setupListeners(role);
+            } else {
+                setLoading(false);
+            }
+        } catch (e) {
+            console.error("Warden auth gate error:", e);
+            // FALLBACK: If Firestore check fails, try to resolve role by email only
+            const fallbackRole = resolveUserRole(user.email, null);
+            if (fallbackRole === 'warden' || fallbackRole === 'admin') {
+                // Initialize listeners with fallback role
+                setupListeners(fallbackRole);
+            } else {
+                setLoading(false);
+            }
+        }
+    };
+
+    const setupListeners = (role: string) => {
+        if (!auth.currentUser) return; // Defensive check
         if (role === 'warden' || role === 'admin') {
-            const unsubscribeAnalytics = onSnapshot(query(collection(db, 'food_analytics')), (snap) => {
+            if (unsubRef.current) unsubRef.current();
+            unsubRef.current = onSnapshot(query(collection(db, 'food_analytics')), (snap) => {
                 const stats = snap.docs.map(doc => ({
                     dish: doc.data().dish,
                     likes: doc.data().likes || 0,
@@ -62,21 +86,21 @@ export default function WardenDashboard() {
                 }));
                 setFoodAnalyticsData(stats);
                 setLoading(false);
+            }, (error) => {
+                console.error("Warden analytics error:", error);
+                setLoading(false);
             });
-            return unsubscribeAnalytics;
         }
     };
 
-    let unsubscribe: any;
-    checkAndSubscribe().then(unsub => unsubscribe = unsub);
-    
-    return () => unsubscribe && unsubscribe();
+    checkAndSubscribe();
+    return () => {
+        if (unsubRef.current) unsubRef.current();
+    };
   }, [user]);
 
   return (
-    <ProtectedRoute allowedRoles={['warden', 'admin']}>
     <div className="min-h-screen bg-background p-4 md:p-6 space-y-6">
-        {/* Header Section */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-zinc-900 p-6 rounded-2xl text-white">
             <div>
                 <h1 className="text-3xl font-black tracking-tight uppercase">Warden Control Panel</h1>
@@ -128,16 +152,14 @@ export default function WardenDashboard() {
                             <h3 className="font-bold text-blue-900 uppercase">Insights Guide</h3>
                         </div>
                         <p className="text-sm text-blue-800 leading-relaxed space-y-4">
-                            <span>• This chart shows the real-time student satisfaction for the meals served today.</span><br/><br/>
-                            <span>• Use these metrics to discuss food quality improvements with the mess committee.</span><br/><br/>
-                            <span className="font-bold block mt-4 text-xs italic">NOTE: Data is anonymized to encourage honest student feedback.</span>
+                            <span>• This chart shows the real-time student satisfaction.</span><br/><br/>
+                            <span className="font-bold block mt-4 text-xs italic">NOTE: Data is anonymized.</span>
                         </p>
                     </div>
                 </div>
             </div>
         )}
 
-        {/* Integrated Notice Board Section */}
         <div className="mt-8 pt-8 border-t border-zinc-200">
             <div className="bg-zinc-900 rounded-3xl p-8 text-white relative overflow-hidden">
                 <div className="absolute top-0 right-0 w-64 h-64 bg-blue-600/10 rounded-full -translate-y-1/2 translate-x-1/2 blur-3xl"></div>
@@ -154,7 +176,7 @@ export default function WardenDashboard() {
                     
                     <div className="space-y-4 max-w-2xl">
                         <Textarea 
-                            placeholder="Type an important announcement (e.g., Water supply update, Mess timing change...)"
+                            placeholder="Type an important announcement..."
                             className="bg-zinc-800/50 border-zinc-700 text-white placeholder:text-zinc-500 focus:ring-blue-500 h-32 rounded-2xl"
                             value={notice}
                             onChange={(e) => setNotice(e.target.value)}
@@ -162,7 +184,7 @@ export default function WardenDashboard() {
                         <Button 
                             onClick={postNotice}
                             disabled={isBroadcasting}
-                            className="bg-blue-600 hover:bg-blue-700 text-white px-8 h-12 rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-blue-900/20"
+                            className="bg-blue-600 hover:bg-blue-700 text-white px-8 h-12 rounded-xl font-bold flex items-center gap-2"
                         >
                             {isBroadcasting ? <Loader2 className="animate-spin h-4 w-4" /> : <Send className="h-4 w-4" />}
                             {isBroadcasting ? 'Broadcasting...' : 'Broadcast to All Students'}
@@ -172,6 +194,13 @@ export default function WardenDashboard() {
             </div>
         </div>
     </div>
+  );
+}
+
+export default function WardenDashboard() {
+  return (
+    <ProtectedRoute allowedRoles={['warden', 'admin']}>
+      <WardenDashboardContent />
     </ProtectedRoute>
   );
 }

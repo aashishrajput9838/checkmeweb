@@ -1,11 +1,14 @@
 import { LayoutDashboard, Vote, Utensils, CalendarDays, TrendingUp, CalendarCheck, UserCheck, ShieldAlert, BarChart3 as ChartBar } from 'lucide-react';
 import React from 'react';
+import { resolveUserRole } from '@/lib/roles';
 
-export function useNavigation(user: any) {
-  const isStudent = user?.email?.includes('@ug.sharda.ac.in');
-  const isStaff = user?.email === 'staff@checkme.com';
-  const isWarden = user?.email === 'warden@checkme.com';
-  const isAdmin = user?.email === 'admin@checkme.com';
+export function useNavigation(user: any, firestoreRole?: string | null) {
+  const role = resolveUserRole(user?.email, firestoreRole);
+  
+  const isStudent = role === 'student' || role === 'representative';
+  const isStaff = role === 'staff';
+  const isWarden = role === 'warden';
+  const isAdmin = role === 'admin';
 
   const navItems = [
     ...(isStudent ? [

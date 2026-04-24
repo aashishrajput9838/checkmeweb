@@ -5,36 +5,65 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Users, FileText, Settings, ShieldAlert, BadgeCheck, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { doc, setDoc, collection, query, where, onSnapshot, updateDoc } from 'firebase/firestore';
-import { db } from '@/lib/firebase';
+import { doc, setDoc, collection, query, where, onSnapshot, updateDoc, getDoc } from 'firebase/firestore';
+import { db, auth } from '@/lib/firebase';
 import { useToast } from '@/hooks/use-toast';
+import { resolveUserRole } from '@/lib/roles';
 
-export default function AdminDashboard() {
+function AdminDashboardContent() {
   const { user, loading } = useAuth();
   const router = useRouter();
   const { toast } = useToast();
-  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [repEmail, setRepEmail] = useState('');
   const [isAssigning, setIsAssigning] = useState(false);
   const [reps, setReps] = useState<any[]>([]);
 
-  useEffect(() => {
-    setIsCheckingAuth(false);
-  }, []);
+  const unsubRef = useRef<() => void>();
 
   useEffect(() => {
-    // Query users collection for anyone with role: 'representative'
-    const q = query(collection(db, 'users'), where('role', '==', 'representative'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const repData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setReps(repData);
-    });
+    if (!user) return;
 
-    return () => unsubscribe();
-  }, []);
+    const setupRepsListener = async () => {
+        try {
+            const userDoc = await getDoc(doc(db, 'users', user.email!));
+            const firestoreRole = userDoc.exists() ? userDoc.data()?.role : null;
+            const role = resolveUserRole(user.email, firestoreRole);
+
+            if (role === 'admin') {
+                setupAdminListeners(role);
+            }
+        } catch (e) {
+            console.error("Admin auth gate error:", e);
+            // FALLBACK: If Firestore check fails, try to resolve role by email only
+            const fallbackRole = resolveUserRole(user.email, null);
+            if (fallbackRole === 'admin') {
+                setupAdminListeners(fallbackRole);
+            }
+        }
+    };
+
+    const setupAdminListeners = (role: string) => {
+        if (!auth.currentUser) return; // Defensive check
+        if (role === 'admin') {
+            if (unsubRef.current) unsubRef.current();
+            const q = query(collection(db, 'users'), where('role', '==', 'representative'));
+            unsubRef.current = onSnapshot(q, (snapshot) => {
+                const repData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                setReps(repData);
+            }, (error) => {
+                console.error("Admin reps listener error:", error);
+            });
+        }
+    };
+
+    setupRepsListener();
+    return () => {
+        if (unsubRef.current) unsubRef.current();
+    };
+  }, [user]);
 
   const handleAssignRep = async () => {
     if (!repEmail || !repEmail.includes('@')) {
@@ -48,7 +77,6 @@ export default function AdminDashboard() {
 
     setIsAssigning(true);
     try {
-      // Using email as the document ID for simple role lookups
       await setDoc(doc(db, 'users', repEmail.toLowerCase()), {
         role: 'representative',
         assignedBy: user?.email,
@@ -64,7 +92,6 @@ export default function AdminDashboard() {
       console.error('Error assigning rep:', error);
       toast({
         title: 'Assignment Failed',
-        description: 'Could not update user role. Check permissions.',
         variant: 'destructive'
       });
     } finally {
@@ -74,7 +101,6 @@ export default function AdminDashboard() {
 
   const handleRemoveRep = async (email: string) => {
     try {
-      // Instead of deleting the user doc completely, we just remove the role
       await updateDoc(doc(db, 'users', email), {
         role: null
       });
@@ -86,23 +112,13 @@ export default function AdminDashboard() {
       console.error("Error removing rep:", error);
       toast({
         title: 'Error',
-        description: 'Failed to remove representative.',
         variant: 'destructive'
       });
     }
   };
 
-  if (loading || isCheckingAuth) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-black"></div>
-      </div>
-    );
-  }
-
   return (
-    <ProtectedRoute allowedRoles={['admin']}>
-      <div className="min-h-screen bg-background p-4 md:p-6 lg:ml-64">
+    <div className="min-h-screen bg-background p-4 md:p-6 lg:ml-64">
         <div className="max-w-7xl mx-auto">
           <div className="mb-8 flex items-center gap-3">
             <ShieldAlert className="h-8 w-8 text-red-600" />
@@ -150,7 +166,6 @@ export default function AdminDashboard() {
                             size="icon" 
                             onClick={() => handleRemoveRep(rep.id)}
                             className="h-8 w-8 text-red-500 hover:bg-red-50 hover:text-red-600"
-                            title="Remove Role"
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
@@ -162,7 +177,7 @@ export default function AdminDashboard() {
               </CardContent>
             </Card>
 
-            <Card className="border-t-4 border-t-blue-500 hover:shadow-md transition-shadow cursor-pointer">
+            <Card className="border-t-4 border-t-blue-500 hover:shadow-md transition-shadow">
               <CardHeader className="pb-2">
                 <CardTitle className="text-lg flex items-center gap-2">
                   <Users className="h-5 w-5 text-blue-500" /> User Management
@@ -173,7 +188,7 @@ export default function AdminDashboard() {
               </CardContent>
             </Card>
 
-            <Card className="border-t-4 border-t-green-500 hover:shadow-md transition-shadow cursor-pointer">
+            <Card className="border-t-4 border-t-green-500 hover:shadow-md transition-shadow">
               <CardHeader className="pb-2">
                 <CardTitle className="text-lg flex items-center gap-2">
                   <FileText className="h-5 w-5 text-green-500" /> System Logs
@@ -186,6 +201,13 @@ export default function AdminDashboard() {
           </div>
         </div>
       </div>
+  );
+}
+
+export default function AdminDashboard() {
+  return (
+    <ProtectedRoute allowedRoles={['admin']}>
+      <AdminDashboardContent />
     </ProtectedRoute>
   );
 }

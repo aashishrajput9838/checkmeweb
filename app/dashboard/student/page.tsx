@@ -26,7 +26,7 @@ import { useMonthlySurvey } from '@/hooks/dashboard/useMonthlySurvey';
 import { messService } from '@/lib/services/messService';
 import { utils, writeFile } from 'xlsx';
 
-export default function StudentDashboard() {
+function StudentDashboardContent() {
   const { user } = useAuth();
   const { toast } = useToast();
   const searchParams = useSearchParams();
@@ -101,8 +101,7 @@ export default function StudentDashboard() {
   };
 
   return (
-    <ProtectedRoute allowedRoles={['student', 'representative', 'admin']}>
-        <div className="min-h-screen bg-background p-4 md:p-6 relative">
+    <div className="min-h-screen bg-background p-4 md:p-6 relative">
       <UserAvatar />
       <div className="max-w-7xl mx-auto">
         <div className="mb-8">
@@ -174,6 +173,13 @@ export default function StudentDashboard() {
         />
       </div>
     </div>
+  );
+}
+
+export default function StudentDashboard() {
+  return (
+    <ProtectedRoute allowedRoles={['student', 'representative', 'admin']}>
+      <StudentDashboardContent />
     </ProtectedRoute>
   );
 }

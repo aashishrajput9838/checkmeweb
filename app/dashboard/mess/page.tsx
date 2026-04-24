@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { ProtectedRoute } from '@/components/protected-route';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { setDoc, deleteDoc } from 'firebase/firestore';
+import { setDoc, deleteDoc, getDoc } from 'firebase/firestore';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
@@ -19,7 +19,7 @@ import { useSearchParams } from 'next/navigation';
 import { InventoryCard } from '@/components/modules/InventoryCard';
 import { FoodPoll } from '@/components/modules/FoodPoll';
 import { Vote, FileSpreadsheet } from 'lucide-react';
-import { utils, writeFile } from 'xlsx';
+import { resolveUserRole } from '@/lib/roles';
 
 const inventoryIcons: any = {
   rice: '🍚',
@@ -29,10 +29,9 @@ const inventoryIcons: any = {
   bread: '🍞'
 };
 
-
 const daysOfWeek = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 
-export default function MessDashboard() {
+function MessDashboardContent() {
   const { user } = useAuth();
   const { toast: notify } = useToast();
   const searchParams = useSearchParams();
@@ -68,109 +67,163 @@ export default function MessDashboard() {
     surveyDays.forEach(day => {
       initialSlots[day] = {};
       surveyMeals.forEach(meal => {
-        initialSlots[day][meal] = ['', '']; // Two empty options
+        initialSlots[day][meal] = ['', ''];
       });
     });
     setSurveyForm((prev: any) => ({ ...prev, slots: initialSlots }));
   }, []);
 
+  // Use refs to manage nested listener cleanups effectively
+  const unsubOverrideRef = useRef<() => void>();
+  const unsubVotesRef = useRef<() => void>();
+  const unsubAttendanceRef = useRef<() => void>();
+
   useEffect(() => {
     if (!user) return;
     
-    const todayDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
-    let unsubs: any[] = [];
+    const todayDate = new Date().toISOString().split('T')[0];
+    const unsubs: (() => void)[] = [];
 
     const setupSubscriptions = async () => {
         try {
             const userDoc = await getDoc(doc(db, 'users', user.email!));
-            const role = userDoc.exists() ? userDoc.data()?.role : 'student';
+            const firestoreRole = userDoc.exists() ? userDoc.data()?.role : null;
+            const role = resolveUserRole(user.email, firestoreRole);
 
             if (role === 'staff' || role === 'admin') {
-                const unsubscribeMenu = onSnapshot(doc(db, 'mess_menu', 'weekly'), (docSnap) => {
-                    if (docSnap.exists()) {
-                        const data = docSnap.data();
-                        if (data && data[todayName]) {
-                            const todays = data[todayName];
-                            setFormMenu({
-                                breakfast: todays.breakfast ? todays.breakfast.join(', ') : '',
-                                lunch: todays.lunch ? todays.lunch.join(', ') : '',
-                                snacks: todays.snacks ? todays.snacks.join(', ') : '',
-                                dinner: todays.dinner ? todays.dinner.join(', ') : '',
-                            });
-                        }
-                    }
-                    
-                    // Override with today's specific emergency menu if it exists
-                    unsubs.push(onSnapshot(doc(db, 'daily_overrides', todayDate), (overrideSnap) => {
-                        if (overrideSnap.exists()) {
-                            const data = overrideSnap.data();
-                            setFormMenu({
-                                breakfast: data.breakfast || '',
-                                lunch: data.lunch || '',
-                                snacks: data.snacks || '',
-                                dinner: data.dinner || '',
-                            });
-                        }
-                    }));
-                    setLoading(false);
-                }, (error) => {
-                    console.error("Error fetching menu:", error);
-                    setLoading(false);
-                });
-                unsubs.push(unsubscribeMenu);
-
-                unsubs.push(onSnapshot(doc(db, 'mess_menu', 'pdfContent'), (docSnap) => {
-                    if (docSnap.exists() && docSnap.data().url) setPdfUrl(docSnap.data().url);
-                }));
-
-                unsubs.push(onSnapshot(query(collection(db, 'inventory')), (snap) => {
-                    setInventoryList(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-                }));
-
-                unsubs.push(onSnapshot(query(collection(db, 'food_analytics')), (snap) => {
-                    setFoodAnalyticsData(snap.docs.map(doc => ({
-                        name: doc.id,
-                        liked: doc.data().liked || 0,
-                        disliked: doc.data().disliked || 0
-                    })));
-                }));
-
-                unsubs.push(onSnapshot(query(collection(db, 'monthly_surveys'), where('status', 'in', ['active', 'ended'])), (snap) => {
-                    if (!snap.empty) {
-                        const survey = { id: snap.docs[0].id, ...snap.docs[0].data() };
-                        setActiveSurvey(survey);
-                        const votesRef = collection(db, 'monthly_surveys', survey.id, 'votes');
-                        unsubs.push(onSnapshot(query(votesRef), (vSnap) => {
-                            const tallies: any = {};
-                            vSnap.forEach(doc => {
-                                Object.entries(doc.data().selections).forEach(([slot, choice]) => {
-                                    if (!tallies[slot]) tallies[slot] = {};
-                                    tallies[slot][choice as string] = (tallies[slot][choice as string] || 0) + 1;
-                                });
-                            });
-                            setSurveyStats(Object.entries(tallies).map(([slot, choices]: any) => {
-                                const options = Object.keys(choices);
-                                return {
-                                    name: slot.split('-')[0].charAt(0).toUpperCase() + slot.split('-')[1].charAt(0),
-                                    [options[0] || 'A']: choices[options[0]] || 0,
-                                    [options[1] || 'B']: choices[options[1]] || 0,
-                                };
-                            }).slice(0, 7));
-                        }));
-                    } else {
-                        setActiveSurvey(null);
-                        setSurveyStats([]);
-                    }
-                }));
+                setupSubscriptionsWithRole(role);
             }
         } catch (e) {
             console.error("Auth gate error:", e);
+            // FALLBACK: If Firestore check fails, try to resolve role by email only
+            const fallbackRole = resolveUserRole(user.email, null);
+            if (fallbackRole === 'staff' || fallbackRole === 'admin') {
+                // ... same setup logic ...
+                // Actually, I should probably refactor the subscription logic into a reusable function
+                // to avoid duplication, but for now I'll just ensure it continues.
+                // Re-running setup with fallback role
+                setupSubscriptionsWithRole(fallbackRole);
+            }
         }
     };
 
+    const setupSubscriptionsWithRole = (role: string) => {
+        if (!auth.currentUser) return; // Defensive check
+        const todayDate = new Date().toISOString().split('T')[0];
+        // Menu Listener
+        unsubs.push(onSnapshot(doc(db, 'mess_menu', 'weekly'), (docSnap) => {
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                if (data && data[todayName]) {
+                    const todays = data[todayName];
+                    setFormMenu({
+                        breakfast: todays.breakfast ? todays.breakfast.join(', ') : '',
+                        lunch: todays.lunch ? todays.lunch.join(', ') : '',
+                        snacks: todays.snacks ? todays.snacks.join(', ') : '',
+                        dinner: todays.dinner ? todays.dinner.join(', ') : '',
+                    });
+                }
+            }
+            
+            if (unsubOverrideRef.current) unsubOverrideRef.current();
+            unsubOverrideRef.current = onSnapshot(doc(db, 'daily_overrides', todayDate), (overrideSnap) => {
+                if (overrideSnap.exists()) {
+                    const data = overrideSnap.data();
+                    setFormMenu({
+                        breakfast: data.breakfast || '',
+                        lunch: data.lunch || '',
+                        snacks: data.snacks || '',
+                        dinner: data.dinner || '',
+                    });
+                }
+            });
+            setLoading(false);
+        }));
+
+        unsubs.push(onSnapshot(doc(db, 'mess_menu', 'pdfContent'), (docSnap) => {
+            if (docSnap.exists() && docSnap.data().url) setPdfUrl(docSnap.data().url);
+        }));
+
+        unsubs.push(onSnapshot(query(collection(db, 'inventory')), (snap) => {
+            setInventoryList(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+        }));
+
+        unsubs.push(onSnapshot(query(collection(db, 'food_analytics')), (snap) => {
+            setFoodAnalyticsData(snap.docs.map(doc => ({
+                name: doc.id,
+                liked: doc.data().liked || 0,
+                disliked: doc.data().disliked || 0
+            })));
+        }));
+
+        unsubs.push(onSnapshot(query(collection(db, 'monthly_surveys'), where('status', 'in', ['active', 'ended'])), (snap) => {
+            if (!snap.empty) {
+                const survey = { id: snap.docs[0].id, ...snap.docs[0].data() };
+                setActiveSurvey(survey);
+                
+                if (unsubVotesRef.current) unsubVotesRef.current();
+                const votesRef = collection(db, 'monthly_surveys', survey.id, 'votes');
+                unsubVotesRef.current = onSnapshot(query(votesRef), (vSnap) => {
+                    const tallies: any = {};
+                    vSnap.forEach(doc => {
+                        Object.entries(doc.data().selections).forEach(([slot, choice]) => {
+                            if (!tallies[slot]) tallies[slot] = {};
+                            tallies[slot][choice as string] = (tallies[slot][choice as string] || 0) + 1;
+                        });
+                    });
+                    setSurveyStats(Object.entries(tallies).map(([slot, choices]: any) => {
+                        const options = Object.keys(choices);
+                        return {
+                            name: slot.split('-')[0].charAt(0).toUpperCase() + slot.split('-')[1].charAt(0),
+                            [options[0] || 'A']: choices[options[0]] || 0,
+                            [options[1] || 'B']: choices[options[1]] || 0,
+                        };
+                    }).slice(0, 7));
+                });
+            } else {
+                setActiveSurvey(null);
+                setSurveyStats([]);
+                if (unsubVotesRef.current) {
+                    unsubVotesRef.current();
+                    unsubVotesRef.current = undefined;
+                }
+            }
+        }));
+    };
+
     setupSubscriptions();
-    return () => unsubs.forEach(unsub => unsub());
+    return () => {
+        unsubs.forEach(unsub => unsub());
+        if (unsubOverrideRef.current) unsubOverrideRef.current();
+        if (unsubVotesRef.current) unsubVotesRef.current();
+    };
   }, [user, todayName]);
+
+  // Integrated Data: Fetch Attendance for Today to calculate expected diners
+  useEffect(() => {
+    if (!user) return;
+    const today = new Date().toISOString().split('T')[0];
+    
+    const unsubStudents = onSnapshot(query(collection(db, 'users'), where('role', '==', 'student')), (studentSnap) => {
+        const totalStudents = studentSnap.size;
+        
+        if (unsubAttendanceRef.current) unsubAttendanceRef.current();
+        unsubAttendanceRef.current = onSnapshot(doc(db, 'attendance', today), (attSnap) => {
+            if (attSnap.exists()) {
+                const records = attSnap.data().records || {};
+                const absentCount = Object.values(records).filter(status => status === 'Absent').length;
+                setExpectedDiners(totalStudents - absentCount);
+            } else {
+                setExpectedDiners(totalStudents);
+            }
+        });
+    });
+
+    return () => {
+        unsubStudents();
+        if (unsubAttendanceRef.current) unsubAttendanceRef.current();
+    };
+  }, [user]);
 
   const handleSurveyOptionChange = (day: string, meal: string, index: number, value: string) => {
     setSurveyForm((prev: any) => {
@@ -181,9 +234,10 @@ export default function MessDashboard() {
   };
 
   const handleCreateSurvey = async () => {
+    if (!user) return;
     setIsSurveyProcessing(true);
     try {
-        const token = await auth.currentUser?.getIdToken();
+        const token = await user.getIdToken(true);
         const res = await fetch('/api/survey', {
             method: 'POST',
             headers: { 
@@ -222,10 +276,10 @@ export default function MessDashboard() {
   };
 
   const handleGenerateFinalMenu = async () => {
-    if (!activeSurvey) return;
+    if (!activeSurvey || !user) return;
     setIsSurveyProcessing(true);
     try {
-        const token = await auth.currentUser?.getIdToken();
+        const token = await user.getIdToken(true);
         const res = await fetch('/api/survey/generate', {
             method: 'POST',
             headers: { 
@@ -234,7 +288,12 @@ export default function MessDashboard() {
             },
             body: JSON.stringify({ monthId: activeSurvey.id })
         });
-        if (!res.ok) throw new Error('Menu generation failed');
+        
+        if (!res.ok) {
+            const errorData = await res.json();
+            throw new Error(errorData.reason || 'Menu generation failed');
+        }
+
         notify({ title: 'Menu Generated!', description: 'The weekly schedule has been updated with winners.' });
     } catch (error: any) {
         notify({ title: 'Error', description: error.message, variant: 'destructive' });
@@ -248,22 +307,20 @@ export default function MessDashboard() {
     setIsUpdating(true);
     try {
       const todayDate = new Date().toISOString().split('T')[0];
-      
       await setDoc(doc(db, 'daily_overrides', todayDate), {
         ...formMenu,
         isEmergency: true,
         updatedAt: new Date().toISOString()
       });
-      
       notify({
         title: "Today's Menu Updated!",
-        description: `Emergency override active for ${todayDate}. This will only affect today.`,
+        description: `Emergency override active for ${todayDate}.`,
       });
     } catch (error) {
       console.error("Error updating menu:", error);
       notify({
         title: 'Error',
-        description: 'Failed to update the menu. Please try again.',
+        description: 'Failed to update the menu.',
         variant: 'destructive',
       });
     } finally {
@@ -272,53 +329,19 @@ export default function MessDashboard() {
   };
 
   const handleReset = async () => {
-    if (!confirm('Are you sure you want to delete today\'s emergency menu and revert to the regular weekly menu?')) {
-        return;
-    }
-
+    if (!confirm('Are you sure you want to revert to the regular weekly menu?')) return;
     setIsUpdating(true);
     try {
         const todayDate = new Date().toISOString().split('T')[0];
         await deleteDoc(doc(db, 'daily_overrides', todayDate));
-        
-        notify({
-            title: 'Menu Reset!',
-            description: 'Today\'s emergency override has been removed. Reverting to weekly menu.',
-        });
+        notify({ title: 'Menu Reset!', description: 'Reverting to weekly menu.' });
     } catch (error) {
         console.error("Error resetting menu:", error);
-        notify({
-            title: 'Reset Failed',
-            description: 'Could not revert to weekly menu.',
-            variant: 'destructive'
-        });
+        notify({ title: 'Reset Failed', variant: 'destructive' });
     } finally {
         setIsUpdating(false);
     }
   };
-
-  // Integrated Data: Fetch Attendance for Today to calculate expected diners
-  useEffect(() => {
-    const today = new Date().toISOString().split('T')[0];
-    const unsubStudents = onSnapshot(query(collection(db, 'users'), where('role', '==', 'student')), (studentSnap) => {
-        const totalStudents = studentSnap.size;
-        
-        const unsubAttendance = onSnapshot(doc(db, 'attendance', today), (attSnap) => {
-            if (attSnap.exists()) {
-                const records = attSnap.data().records || {};
-                const absentCount = Object.values(records).filter(status => status === 'Absent').length;
-                // If many aren't marked yet, we assume they are coming, but we subtract known absents.
-                setExpectedDiners(totalStudents - absentCount);
-            } else {
-                setExpectedDiners(totalStudents);
-            }
-        });
-
-        return () => unsubAttendance();
-    });
-
-    return () => unsubStudents();
-  }, []);
 
   const handleInputChange = (field: string, value: string) => {
     setFormMenu(prev => ({ ...prev, [field]: value }));
@@ -327,15 +350,13 @@ export default function MessDashboard() {
   const lowStockItems = inventoryList.filter(item => item.stock <= (item.threshold || 5));
 
   return (
-    <ProtectedRoute allowedRoles={['staff', 'admin']}>
-        <div className="min-h-screen bg-background p-4 md:p-6">
+    <div className="min-h-screen bg-background p-4 md:p-6">
       <div className="max-w-7xl mx-auto">
         <div className="mb-8">
           <h1 className="text-3xl font-bold">Mess Staff Dashboard</h1>
           <p className="text-muted-foreground">Manage menu and track food analytics</p>
         </div>
 
-        {/* Inventory Alert */}
         {lowStockItems.length > 0 && (
           <div className="mb-6">
             <Alert className="border-red-200 bg-red-50">
@@ -347,14 +368,13 @@ export default function MessDashboard() {
           </div>
         )}
 
-        {/* Official PDF Menu Notice */}
         {pdfUrl && (
           <div className="mb-6">
             <Alert className="border-blue-200 bg-blue-50 flex items-center justify-between p-4">
               <div className="flex items-center gap-2">
                 <FileText className="h-5 w-5 text-blue-600" />
                 <AlertDescription className="text-blue-700 font-medium">
-                  An official PDF menu has been uploaded by the Mess Representative.
+                  An official PDF menu has been uploaded.
                 </AlertDescription>
               </div>
               <Button 
@@ -368,7 +388,6 @@ export default function MessDashboard() {
           </div>
         )}
 
-        {/* Integrated Overview Metrics - Only show in Overview */}
         {currentTab === 'overview' && (
             <>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8 animate-in fade-in slide-in-from-top-4 duration-500">
@@ -482,7 +501,7 @@ export default function MessDashboard() {
                         <div className="flex items-center justify-between">
                             <div>
                                 <CardTitle className="text-3xl font-black tracking-tight">Real-time Stock Management</CardTitle>
-                                <p className="text-sm text-muted-foreground italic">Manage inventory levels instantly (Cloud Synced)</p>
+                                <p className="text-sm text-muted-foreground italic">Manage inventory levels instantly</p>
                             </div>
                             <div className="bg-green-500 text-white px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-widest animate-pulse">
                                 Live
@@ -519,35 +538,16 @@ export default function MessDashboard() {
                                 <Button 
                                     onClick={handleGenerateFinalMenu}
                                     disabled={isSurveyProcessing}
-                                    className="bg-yellow-500 text-black hover:bg-yellow-400 font-bold px-6 py-6 rounded-2xl flex items-center gap-2 shadow-[0_0_20px_rgba(234,179,8,0.3)]"
+                                    className="bg-yellow-500 text-black hover:bg-yellow-400 font-bold px-6 py-6 rounded-2xl flex items-center gap-2"
                                 >
                                     {isSurveyProcessing && <div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin"></div>}
                                     Final Tally & Update Menu
                                 </Button>
                             </div>
 
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                                <Card className="bg-white/5 border-white/10 text-white p-4">
-                                    <p className="text-[10px] text-zinc-500 uppercase font-black tracking-widest mb-1">Total Slots</p>
-                                    <p className="text-2xl font-black">21 <span className="text-xs font-normal text-zinc-500">Meals</span></p>
-                                </Card>
-                                <Card className="bg-white/5 border-white/10 text-white p-4">
-                                    <p className="text-[10px] text-zinc-500 uppercase font-black tracking-widest mb-1">Options per Slot</p>
-                                    <p className="text-2xl font-black">2 <span className="text-xs font-normal text-zinc-500">Choices</span></p>
-                                </Card>
-                                <Card className="bg-white/5 border-white/10 text-white p-4">
-                                    <p className="text-[10px] text-zinc-500 uppercase font-black tracking-widest mb-1">Vote Strategy</p>
-                                    <p className="text-lg font-bold">Plurality Winner</p>
-                                </Card>
-                                <Card className="bg-white/5 border-white/10 text-white p-4">
-                                    <p className="text-[10px] text-zinc-500 uppercase font-black tracking-widest mb-1">Auto-Publish</p>
-                                    <p className="text-lg font-bold text-green-400">ENABLED</p>
-                                </Card>
-                            </div>
-
                             {surveyStats.length > 0 && (
                                 <div className="mt-8 pt-8 border-t border-white/5">
-                                    <h3 className="text-xs font-black uppercase text-zinc-500 tracking-widest mb-6">Vote Distribution (Top Trending Slots)</h3>
+                                    <h3 className="text-xs font-black uppercase text-zinc-500 tracking-widest mb-6">Vote Distribution</h3>
                                     <div className="h-[250px] w-full">
                                         <ResponsiveContainer width="100%" height="100%">
                                             <BarChart data={surveyStats}>
@@ -565,11 +565,6 @@ export default function MessDashboard() {
                                 </div>
                             )}
                         </div>
-                        <div className="bg-yellow-500/10 p-4 border-t border-white/5 text-center">
-                            <p className="text-xs font-bold text-yellow-500 uppercase tracking-widest">
-                                💡 Tip: Generation will search all student votes and pick the top favorite for each specific day/meal.
-                            </p>
-                        </div>
                     </Card>
                 ) : (
                     <Card className="border-none shadow-2xl rounded-3xl overflow-hidden bg-white">
@@ -579,12 +574,12 @@ export default function MessDashboard() {
                                     <Vote className="h-6 w-6 text-yellow-500" />
                                     <h3 className="text-2xl font-black tracking-tight">Create Monthly Food Survey</h3>
                                 </div>
-                                <p className="text-zinc-400 text-sm">Design the ballot for next month's menu selections.</p>
+                                <p className="text-zinc-400 text-sm">Design the ballot for next month.</p>
                             </div>
                             <Button 
                                 onClick={handleAutoFillSurvey}
                                 variant="outline"
-                                className="border-yellow-500/50 text-yellow-500 hover:bg-yellow-500 hover:text-black font-black uppercase text-[10px] tracking-[0.2em] px-6 h-10 rounded-xl transition-all"
+                                className="border-yellow-500/50 text-yellow-500 hover:bg-yellow-500 hover:text-black font-black uppercase text-[10px] tracking-[0.2em] px-6 h-10 rounded-xl"
                             >
                                 ✨ Magic Auto-Fill
                             </Button>
@@ -604,7 +599,7 @@ export default function MessDashboard() {
                                 <div className="space-y-2">
                                     <label className="text-xs font-black uppercase text-zinc-400 tracking-widest">Display Title</label>
                                     <Input 
-                                        placeholder="e.g., May 2026 Special Menu Build" 
+                                        placeholder="e.g., May 2026 Special Menu" 
                                         value={surveyForm.monthName}
                                         onChange={(e)=>setSurveyForm({...surveyForm, monthName: e.target.value})}
                                         className="h-12 border-zinc-200 font-bold"
@@ -628,13 +623,13 @@ export default function MessDashboard() {
                                                     <div className="space-y-2">
                                                         <Input 
                                                             placeholder="Choice A" 
-                                                            className="text-xs border-zinc-200 h-9 bg-zinc-50 focus:bg-white transition-all shadow-sm"
+                                                            className="text-xs border-zinc-200 h-9 bg-zinc-50"
                                                             value={surveyForm.slots[day]?.[meal]?.[0] || ''}
                                                             onChange={(e) => handleSurveyOptionChange(day, meal, 0, e.target.value)}
                                                         />
                                                         <Input 
                                                             placeholder="Choice B" 
-                                                            className="text-xs border-zinc-200 h-9 bg-zinc-50 focus:bg-white transition-all shadow-sm"
+                                                            className="text-xs border-zinc-200 h-9 bg-zinc-50"
                                                             value={surveyForm.slots[day]?.[meal]?.[1] || ''}
                                                             onChange={(e) => handleSurveyOptionChange(day, meal, 1, e.target.value)}
                                                         />
@@ -647,11 +642,10 @@ export default function MessDashboard() {
                             </div>
 
                             <div className="mt-12 flex justify-end gap-4 border-t pt-8">
-                                <Button variant="ghost" className="h-14 px-8 font-bold text-zinc-500">Discard Draft</Button>
                                 <Button 
                                     onClick={handleCreateSurvey}
                                     disabled={isSurveyProcessing}
-                                    className="h-14 px-12 bg-zinc-900 text-white hover:bg-black font-black uppercase tracking-widest text-xs rounded-2xl shadow-xl transition-all hover:scale-[1.02] active:scale-[0.98]"
+                                    className="h-14 px-12 bg-zinc-900 text-white hover:bg-black font-black uppercase tracking-widest text-xs rounded-2xl shadow-xl"
                                 >
                                     {isSurveyProcessing ? 'Launching...' : 'Activate Monthly Survey'}
                                 </Button>
@@ -663,6 +657,13 @@ export default function MessDashboard() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function MessDashboard() {
+  return (
+    <ProtectedRoute allowedRoles={['staff', 'admin']}>
+      <MessDashboardContent />
     </ProtectedRoute>
   );
 }

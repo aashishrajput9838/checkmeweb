@@ -14,22 +14,33 @@ export function useMonthlySurvey(userEmail: string | undefined) {
     useEffect(() => {
         if (!userEmail) return;
 
+        let unsubVote: (() => void) | undefined;
+
         const unsubSurvey = onSnapshot(query(collection(db, 'monthly_surveys'), where('status', '==', 'active')), (snap) => {
             if (!snap.empty) {
                 const survey = { id: snap.docs[0].id, ...snap.docs[0].data() };
                 setActiveSurvey(survey);
 
-                const unsubVote = onSnapshot(doc(db, 'monthly_surveys', survey.id, 'votes', userEmail), (vSnap) => {
+                // Cleanup previous vote listener if survey changes
+                if (unsubVote) unsubVote();
+
+                unsubVote = onSnapshot(doc(db, 'monthly_surveys', survey.id, 'votes', userEmail), (vSnap) => {
                     setCurrentUserVote(vSnap.exists() ? vSnap.data() : null);
                 });
-                return () => unsubVote();
             } else {
                 setActiveSurvey(null);
                 setCurrentUserVote(null);
+                if (unsubVote) {
+                    unsubVote();
+                    unsubVote = undefined;
+                }
             }
         });
 
-        return () => unsubSurvey();
+        return () => {
+            unsubSurvey();
+            if (unsubVote) unsubVote();
+        };
     }, [userEmail]);
 
     const handleSurveySelect = (slotId: string, choice: string) => {

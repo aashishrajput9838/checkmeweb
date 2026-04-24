@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { resolveUserRole } from "@/lib/roles";
 
 interface ProtectedRouteProps {
     children: React.ReactNode;
@@ -35,7 +36,8 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
         const checkRole = async () => {
             try {
                 const userDoc = await getDoc(doc(db, 'users', user.email!));
-                const userRole = userDoc.exists() ? userDoc.data()?.role : 'student';
+                const firestoreRole = userDoc.exists() ? userDoc.data()?.role : null;
+                const userRole = resolveUserRole(user.email, firestoreRole);
                 
                 if (allowedRoles.includes(userRole)) {
                     setAuthorized(true);
@@ -44,7 +46,14 @@ export function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) 
                 }
             } catch (error) {
                 console.error("RBAC Check Error:", error);
-                router.push("/login");
+                
+                // FALLBACK: If Firestore check fails, try to resolve role by email only
+                const fallbackRole = resolveUserRole(user.email, null);
+                if (allowedRoles.includes(fallbackRole)) {
+                    setAuthorized(true);
+                } else {
+                    router.push("/login");
+                }
             } finally {
                 setRoleLoading(false);
             }
